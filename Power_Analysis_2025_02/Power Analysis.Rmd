@@ -1,0 +1,125 @@
+@ -0,0 +1,124 @@
+---
+title: "Power analysis"
+output: html_document
+date: "2025-02-24"
+
+Data request for Colin Shea (FWRI) Feb 2025
+For Apalachicola Analyses
+Providing Location and Survey data for Apalachicola Bay 2022-01-01 to 2024-12-31 
+---
+
+
+```{r VariableSet, echo = FALSE, warning = FALSE, message = FALSE}
+# Set your variables
+ReportEnd <- as.Date("2024-12-31")  # Report End Date, currently no filter is set to use this. May need to modify somewhere
+Database = "OysterLocalMD20241118"  # Set the local database to use
+Database = "OysterLocalMD20250128"  # Set the local database to use
+Server = "localhost\\LOCALSQL" # Set the local Server to use
+```
+
+```{r PackageLoad, echo = FALSE, warning = FALSE, message = FALSE}
+# Load necessary R packages
+library(tidyverse)
+library(odbc)
+library(DBI)
+library(dbplyr)
+library(lubridate)
+library(knitr)
+library(ggpubr)
+library(patchwork) #Required for arranging multiple plots, more flexible
+library(scales)
+```
+
+```{r ConfigureChunks, warning=FALSE, include=FALSE}
+# Configure chunks
+knitr::opts_chunk$set(
+	echo = FALSE,
+	fig.height = 10,
+	fig.width = 8,
+	message = FALSE,
+	warning = FALSE
+)
+
+Estuaries <- c("AB")
+```
+
+```{r Functions}
+### Filter Functions ###
+FilterFunction1 <- function(data) {
+  data %>% 
+    mutate(TripDate = as.Date(substring(QuadratID, 8, 15), format = "%Y%m%d"),
+         FixedLocationID = substring(QuadratID, 19, 22),
+         Year = year(TripDate)) %>%
+    left_join(FixedLocations1, by = c("FixedLocationID")) %>%
+    mutate(Season = case_when(
+          month(ymd(TripDate)) >= 1 & month(ymd(TripDate)) <= 6 ~ "Spring",
+          month(ymd(TripDate)) > 6 ~ "Fall",
+          TRUE ~ "Invalid")) %>%
+    mutate(Season_Year = paste(Season, Year, sep = " ")) %>%
+    mutate(TimeSinceCultched = as.numeric(interval(DateLastCultched, TripDate), "years")) %>%
+    mutate(ProjectGroup = case_when(
+      grepl("RESTORE", StationName) ~ "RESTORE 2017",
+      grepl("Baywide", StationName) ~ "Baywide",
+      grepl("NFWF", StationName) & Year < 2019 ~ "NFWF 2015",
+      grepl("SBM", StationName) & TimeSinceCultched > 0 ~ "NFWF 2021",
+      TRUE ~ "Historic Uncultched")) %>%
+    mutate(CultchAge = case_when(
+      is.na(TimeSinceCultched) ~ "Historic Uncultched",
+      TimeSinceCultched < 0 ~ "Historic Uncultched",
+      TimeSinceCultched > 0 & TimeSinceCultched < 5 ~ "Recently Cultched",
+      TimeSinceCultched >= 5 ~ "Previously Cultched"))
+}
+
+
+```
+
+```{r DatabaseDownload}
+# Connect to Local database server and pull all necessary data, then close connection 
+con <- dbConnect(odbc(),
+                    Driver = "SQL Server", 
+                    Server = Server,
+                    Database = Database,
+                    Authentication = "ActiveDirectoryIntegrated")
+
+dboFixedLocations <- tbl(con,in_schema("dbo", "FixedLocations")) %>%
+  collect() %>% 
+  filter(Estuary %in% Estuaries)
+
+hsdbSurveyQuadrat <- tbl(con,in_schema("hsdb", "SurveyQuadrat")) %>%
+  collect() %>%
+  filter(substring(SampleEventID, 1, 2) %in% Estuaries)
+  
+dboSurveyQuadrat <- tbl(con,in_schema("dbo", "SurveyQuadrat")) %>%
+  collect() %>%
+  filter(substring(SampleEventID, 1, 2) %in% Estuaries)
+
+hsdbSurveySH <- tbl(con,in_schema("hsdb", "SurveySH")) %>%
+  collect() %>%
+  mutate(ShellHeight = as.integer(ShellHeight)) %>%
+  filter(substring(QuadratID, 1, 2) %in% Estuaries)
+
+dboSurveySH <- tbl(con,in_schema("dbo", "SurveySH")) %>%
+  collect()%>%
+  mutate(ShellHeight = as.integer(ShellHeight)) %>%
+  filter(substring(QuadratID, 1, 2) %in% Estuaries)
+
+hsdbSBMQuadrat <- tbl(con,in_schema("hsdb", "ShellBudgetQuadrat")) %>%
+  collect() %>%
+  filter(substring(SampleEventID, 1, 2) %in% Estuaries)
+  
+dboSBMQuadrat <- tbl(con,in_schema("dbo", "ShellBudgetQuadrat")) %>%
+  collect() %>%
+  filter(substring(SampleEventID, 1, 2) %in% Estuaries)
+
+hsdbSBMSH <- tbl(con,in_schema("hsdb", "ShellBudgetSH")) %>%
+  collect() %>%
+  filter(substring(QuadratID, 1, 2) %in% Estuaries)
+
+dboSBMSH <- tbl(con,in_schema("dbo", "ShellBudgetSH")) %>%
+  collect()%>%
+  filter(substring(QuadratID, 1, 2) %in% Estuaries)
+
+DBI::dbDisconnect(con)
+
+```
