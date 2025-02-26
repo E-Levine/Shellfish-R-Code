@@ -123,3 +123,153 @@ dboSBMSH <- tbl(con,in_schema("dbo", "ShellBudgetSH")) %>%
 DBI::dbDisconnect(con)
 
 ```
+
+```{r DataFiltersBasic}
+# Filter data frames so that only data collected for inclusion in the DMFM Report are present.
+FixedLocations1 <- dboFixedLocations %>% 
+  mutate(StationNumber = as.numeric(StationNumber),
+         DateLastCultched = as.Date(DateLastCultched)) %>%
+  select(FixedLocationID,
+         Estuary,
+         SectionName,
+         StationName,
+         ParcelName,
+         StationNumber,
+         StationNameNumber,
+         DateLastCultched) %>% 
+  distinct()
+ 
+### QUADRATS ###  
+  # Survey QUADRATS #
+Survey_Quad1 <- union_all(dboSurveyQuadrat, hsdbSurveyQuadrat) %>%
+
+  select(QuadratID,
+         NumLive,
+         TotalWeight,
+         Comments)
+
+  # SBM QUADRATS # 
+SBM_Quad1 <- union_all(dboSBMQuadrat, hsdbSBMQuadrat) %>%
+  rename(TotalWeight = TotalSampleWeight, # Must rename the columns so we can union them together
+         NumLive = NumLiveOysters) %>%
+  select(QuadratID,
+         NumLive,
+         TotalWeight,
+         Comments)
+
+  # ALL Quadrats # 
+Quadrats_ALL <- union(Survey_Quad1, SBM_Quad1) %>%
+  FilterFunction1() %>%
+
+
+  mutate(TripDate = as.Date(substring(QuadratID, 8, 15), format = "%Y%m%d"),
+       FixedLocationID = substring(QuadratID, 19, 22),
+       Year = year(TripDate)) %>%
+  left_join(FixedLocations1, by = c("FixedLocationID")) %>%
+  arrange(TripDate, StationNumber) %>%
+  mutate(Season = case_when(
+        month(ymd(TripDate)) >= 1 & month(ymd(TripDate)) <= 6 ~ "Spring",
+        month(ymd(TripDate)) > 6 ~ "Fall",
+        TRUE ~ "Invalid")) %>%
+  mutate(Season_Year = paste(Season, Year, sep = " ")) %>%
+  mutate(StationGroup = case_when(
+    grepl("RESTORE", StationName) ~ "RESTORE 2017",
+    TRUE ~ "Historic Uncultched")) %>%
+  select(QuadratID, 
+         FixedLocationID,
+         TripDate,
+         Estuary,
+         SectionName,
+         StationName,
+         StationNumber,
+         ParcelName,
+         StationNameNumber,
+         ProjectGroup,
+         CultchAge,
+         TimeSinceCultched,
+         Season,
+         Year,
+         Season_Year,
+         NumLive,
+         TotalWeight,
+         Comments)
+
+##### 
+### SHELL HEIGHTS ###
+  # Survey SHELL HEIGHTS #
+Survey_SH1 <- union_all(dboSurveySH, hsdbSurveySH) %>%
+  select(ShellHeightID, 
+         QuadratID, 
+         ShellHeight,
+         Comments)
+
+  # SBM SHELL HEIGHTS #
+#####
+### Combine all quadrat data
+####
+
+Quadrats_ALL <- union(Survey_Quad1, SBM_Quad1)
+
+#########
+
+### Survey SHELL HEIGHTS ###
+Survey_SH1 <- union_all(dboSurveySH, hsdbSurveySH) %>%
+  mutate(TripDate = as.Date(substring(QuadratID, 8, 15), format = "%Y%m%d"),
+       FixedLocationID = substring(QuadratID, 19, 22),
+       Year = year(TripDate)) %>%
+  left_join(FixedLocations1, by = c("FixedLocationID")) %>%
+  arrange(TripDate, StationNumber) %>%
+  mutate(Season = case_when(
+        month(ymd(TripDate)) >= 1 & month(ymd(TripDate)) <= 6 ~ "Spring",
+        month(ymd(TripDate)) > 6 ~ "Fall",
+        TRUE ~ "Invalid")) %>%
+  mutate(Season_Year = paste(Season, Year, sep = " ")) %>%
+  mutate(StationGroup = case_when(
+    grepl("RESTORE", StationName) ~ "RESTORE 2017",
+    TRUE ~ "Historic Uncultched")) %>%
+  select(ShellHeightID, 
+         QuadratID, 
+         FixedLocationID,
+         TripDate, 
+         Estuary,
+         SectionName,
+         StationName,
+         StationNumber,
+         ParcelName,
+         StationNameNumber,
+         StationGroup,
+         Season, 
+         Year,
+         Season_Year,
+         ShellHeight)
+
+### SBM SHELL HEIGHTS ###
+SBM_SH1 <- union_all(dboSBMSH, hsdbSBMSH) %>%
+  filter(LiveOrDead != "Dead") %>% ### Remove measures of dead
+  select(ShellHeightID, 
+         QuadratID, 
+         ShellHeight,
+         Comments)
+
+  # ALL Shell Heights #
+ShellHeights_ALL <- union(Survey_SH1, SBM_SH1) %>%
+  FilterFunction1() %>%
+  select(QuadratID,
+         FixedLocationID,
+         TripDate,
+         Estuary,
+         SectionName,
+         StationName,
+         StationNumber,
+         ParcelName,
+         StationNameNumber,
+         ProjectGroup,
+         CultchAge,
+         TimeSinceCultched,
+         Season,
+         Year,
+         Season_Year,
+         ShellHeight,
+         Comments)
+
+```
