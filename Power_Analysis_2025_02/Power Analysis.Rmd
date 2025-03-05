@@ -10,7 +10,7 @@ Providing Location and Survey data for Apalachicola Bay 2022-01-01 to 2024-12-31
 
 ```{r VariableSet, echo = FALSE, warning = FALSE, message = FALSE}
 # Set your variables
-ReportEnd <- as.Date("2024-12-31")  # Report End Date, currently no filter is set to use this. May need to modify somewhere
+Estuaries <- c("AB") # Limits to only Apalachicola Bay
 Database = "OysterLocalMD20250128"  # Set the local database to use
 Server = "localhost\\LOCALSQL" # Set the local Server to use
 ```
@@ -23,22 +23,16 @@ library(DBI)
 library(dbplyr)
 library(lubridate)
 library(knitr)
-library(ggpubr)
-library(patchwork) #Required for arranging multiple plots, more flexible
-library(scales)
+library(openxlsx)
 ```
 
 ```{r ConfigureChunks, warning=FALSE, include=FALSE}
 # Configure chunks
 knitr::opts_chunk$set(
 	echo = FALSE,
-	fig.height = 10,
-	fig.width = 8,
 	message = FALSE,
 	warning = FALSE
 )
-
-Estuaries <- c("AB")
 ```
 
 ```{r Functions}
@@ -212,4 +206,30 @@ ShellHeights_ALL <- union(Survey_SH1, SBM_SH1) %>%
 ```
 
 ```{r Cleanup}
-# Remove intermediary data frames
+# Remove intermediate data frames
+rm(dboFixedLocations,dboSBMQuadrat,dboSBMSH,dboSurveyQuadrat,dboSurveySH)
+rm(hsdbSBMQuadrat,hsdbSBMSH,hsdbSurveyQuadrat,hsdbSurveySH)
+rm(FixedLocations1,SBM_Quad1,SBM_SH1,Survey_Quad1,Survey_SH1)
+```
+
+``` {r Export}
+# Export data to Excel Workbook
+datafile = paste("AB_Oysters_", Sys.Date(), ".xlsx", sep = "") # Assign filename
+
+write.xlsx(list(
+  "Quadrats" = Quadrats_ALL,
+  "SHs" = ShellHeights_ALL),
+  file = datafile,
+  colNames = TRUE
+)
+# Open the workbook for further customization
+wb <- loadWorkbook(datafile)
+  # Auto-adjust column widths
+  setColWidths(wb, sheet = "Quadrats", cols = 1:ncol(Quadrats_ALL), widths = "auto")
+  setColWidths(wb, sheet = "SHs", cols = 1:ncol(ShellHeights_ALL), widths = "auto")
+  # Freeze the first row
+  freezePane(wb, sheet = "Quadrats", firstRow = TRUE)
+  freezePane(wb, sheet = "SHs", firstRow = TRUE)
+  # Save the modified workbook
+  saveWorkbook(wb, datafile, overwrite = TRUE)
+```
