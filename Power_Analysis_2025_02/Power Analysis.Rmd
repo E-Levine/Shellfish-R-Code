@@ -1,0 +1,235 @@
+---
+title: "Power analysis"
+output: html_document
+date: "2025-02-24"
+
+Data request for Colin Shea (FWRI) Feb 2025
+For Apalachicola Analyses
+Providing Location and Survey data for Apalachicola Bay 2022-01-01 to 2024-12-31 
+---
+
+```{r VariableSet, echo = FALSE, warning = FALSE, message = FALSE}
+# Set your variables
+Estuaries <- c("AB") # Limits to only Apalachicola Bay
+Database = "OysterLocalMD20250128"  # Set the local database to use
+Server = "localhost\\LOCALSQL" # Set the local Server to use
+```
+
+```{r PackageLoad, echo = FALSE, warning = FALSE, message = FALSE}
+# Load necessary R packages
+library(tidyverse)
+library(odbc)
+library(DBI)
+library(dbplyr)
+library(lubridate)
+library(knitr)
+library(openxlsx)
+```
+
+```{r ConfigureChunks, warning=FALSE, include=FALSE}
+# Configure chunks
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+```{r Functions}
+### Filter Functions ###
+FilterFunction1 <- function(data) {
+  data %>% 
+    mutate(TripDate = as.Date(substring(QuadratID, 8, 15), format = "%Y%m%d"),
+         FixedLocationID = substring(QuadratID, 19, 22),
+         Year = year(TripDate)) %>%
+    left_join(FixedLocations1, by = c("FixedLocationID")) %>%
+    mutate(Season = case_when(
+          month(ymd(TripDate)) >= 1 & month(ymd(TripDate)) <= 6 ~ "Spring",
+          month(ymd(TripDate)) > 6 ~ "Fall",
+          TRUE ~ "Invalid")) %>%
+    mutate(Season_Year = paste(Season, Year, sep = " ")) %>%
+    mutate(TimeSinceCultched = as.numeric(interval(DateLastCultched, TripDate), "years")) %>%
+    mutate(ProjectGroup = case_when(
+      grepl("RESTORE", StationName) ~ "RESTORE 2017",
+      grepl("Baywide", StationName) ~ "Baywide",
+      grepl("NFWF", StationName) & Year < 2019 ~ "NFWF 2015",
+      grepl("SBM", StationName) & TimeSinceCultched > 0 ~ "NFWF 2021",
+      TRUE ~ "Historic Uncultched")) %>%
+    mutate(CultchAge = case_when(
+      is.na(TimeSinceCultched) ~ "Historic Uncultched",
+      TimeSinceCultched < 0 ~ "Historic Uncultched",
+      TimeSinceCultched > 0 & TimeSinceCultched < 5 ~ "Recently Cultched",
+      TimeSinceCultched >= 5 ~ "Previously Cultched"))
+}
+```
+
+```{r DatabaseDownload}
+# Connect to Local database server and pull all necessary data, then close connection 
+con <- dbConnect(odbc(),
+                    Driver = "SQL Server", 
+                    Server = Server,
+                    Database = Database,
+                    Authentication = "ActiveDirectoryIntegrated")
+
+dboFixedLocations <- tbl(con,in_schema("dbo", "FixedLocations")) %>%
+  collect() %>% 
+  filter(Estuary %in% Estuaries)
+
+hsdbSurveyQuadrat <- tbl(con,in_schema("hsdb", "SurveyQuadrat")) %>%
+  collect() %>%
+  filter(substring(SampleEventID, 1, 2) %in% Estuaries)
+  
+dboSurveyQuadrat <- tbl(con,in_schema("dbo", "SurveyQuadrat")) %>%
+  collect() %>%
+  filter(substring(SampleEventID, 1, 2) %in% Estuaries)
+
+hsdbSurveySH <- tbl(con,in_schema("hsdb", "SurveySH")) %>%
+  collect() %>%
+  mutate(ShellHeight = as.integer(ShellHeight)) %>%
+  filter(substring(QuadratID, 1, 2) %in% Estuaries)
+
+dboSurveySH <- tbl(con,in_schema("dbo", "SurveySH")) %>%
+  collect()%>%
+  mutate(ShellHeight = as.integer(ShellHeight)) %>%
+  filter(substring(QuadratID, 1, 2) %in% Estuaries)
+
+hsdbSBMQuadrat <- tbl(con,in_schema("hsdb", "ShellBudgetQuadrat")) %>%
+  collect() %>%
+  filter(substring(SampleEventID, 1, 2) %in% Estuaries)
+  
+dboSBMQuadrat <- tbl(con,in_schema("dbo", "ShellBudgetQuadrat")) %>%
+  collect() %>%
+  filter(substring(SampleEventID, 1, 2) %in% Estuaries)
+
+hsdbSBMSH <- tbl(con,in_schema("hsdb", "ShellBudgetSH")) %>%
+  collect() %>%
+  filter(substring(QuadratID, 1, 2) %in% Estuaries)
+
+dboSBMSH <- tbl(con,in_schema("dbo", "ShellBudgetSH")) %>%
+  collect()%>%
+  filter(substring(QuadratID, 1, 2) %in% Estuaries)
+
+DBI::dbDisconnect(con)
+```
+
+```{r DataFiltersBasic}
+# Filter data frames so that only data collected for inclusion in the DMFM Report are present.
+FixedLocations1 <- dboFixedLocations %>% 
+  mutate(DateLastCultched = as.Date(DateLastCultched)) %>%
+  select(FixedLocationID,
+         Estuary,
+         SectionName,
+         StationName,
+         ParcelName,
+         StationNameNumber,
+         DateLastCultched) %>% 
+  distinct()
+ 
+### QUADRATS ###  
+  # Survey QUADRATS #
+Survey_Quad1 <- union_all(dboSurveyQuadrat, hsdbSurveyQuadrat) %>%
+  select(QuadratID,
+         NumLive,
+         TotalWeight,
+         Comments)
+
+  # SBM QUADRATS # 
+SBM_Quad1 <- union_all(dboSBMQuadrat, hsdbSBMQuadrat) %>%
+  rename(TotalWeight = TotalSampleWeight, # Must rename the columns so we can union them together
+         NumLive = NumLiveOysters) %>%
+  select(QuadratID,
+         NumLive,
+         TotalWeight,
+         Comments)
+
+  # ALL Quadrats # 
+Quadrats_ALL <- union(Survey_Quad1, SBM_Quad1) %>%
+  FilterFunction1() %>%
+  select(QuadratID, 
+         FixedLocationID,
+         TripDate,
+         Estuary,
+         SectionName,
+         StationName,
+         ParcelName,
+         StationNameNumber,
+         ProjectGroup,
+         CultchAge,
+         TimeSinceCultched,
+         DateLastCultched,
+         Season,
+         Year,
+         Season_Year,
+         NumLive,
+         TotalWeight,
+         Comments)
+
+##### 
+
+### SHELL HEIGHTS ###
+  # Survey SHELL HEIGHTS #
+Survey_SH1 <- union_all(dboSurveySH, hsdbSurveySH) %>%
+  select(ShellHeightID, 
+         QuadratID, 
+         ShellHeight,
+         Comments)
+
+  # SBM SHELL HEIGHTS ###
+SBM_SH1 <- union_all(dboSBMSH, hsdbSBMSH) %>%
+  filter(LiveOrDead != "Dead") %>% ### Remove measures of dead
+  select(ShellHeightID, 
+         QuadratID, 
+         ShellHeight,
+         Comments)
+
+  # ALL Shell Heights #
+ShellHeights_ALL <- union(Survey_SH1, SBM_SH1) %>%
+  FilterFunction1() %>%
+  select(ShellHeightID,
+         QuadratID,
+         FixedLocationID,
+         TripDate,
+         Estuary,
+         SectionName,
+         StationName,
+         ParcelName,
+         StationNameNumber,
+         ProjectGroup,
+         DateLastCultched,
+         CultchAge,
+         TimeSinceCultched,
+         Season,
+         Year,
+         Season_Year,
+         ShellHeight,
+         Comments)
+```
+
+```{r Cleanup}
+# Remove intermediate data frames
+rm(dboFixedLocations,dboSBMQuadrat,dboSBMSH,dboSurveyQuadrat,dboSurveySH)
+rm(hsdbSBMQuadrat,hsdbSBMSH,hsdbSurveyQuadrat,hsdbSurveySH)
+rm(FixedLocations1,SBM_Quad1,SBM_SH1,Survey_Quad1,Survey_SH1)
+```
+
+``` {r Export}
+# Export data to Excel Workbook
+datafile = paste("AB_Oysters_", Sys.Date(), ".xlsx", sep = "") # Assign filename
+
+write.xlsx(list(
+  "Quadrats" = Quadrats_ALL,
+  "SHs" = ShellHeights_ALL),
+  file = datafile,
+  colNames = TRUE
+)
+# Open the workbook for further customization
+wb <- loadWorkbook(datafile)
+  # Auto-adjust column widths
+  setColWidths(wb, sheet = "Quadrats", cols = 1:ncol(Quadrats_ALL), widths = "auto")
+  setColWidths(wb, sheet = "SHs", cols = 1:ncol(ShellHeights_ALL), widths = "auto")
+  # Freeze the first row
+  freezePane(wb, sheet = "Quadrats", firstRow = TRUE)
+  freezePane(wb, sheet = "SHs", firstRow = TRUE)
+  # Save the modified workbook
+  saveWorkbook(wb, datafile, overwrite = TRUE)
+```
