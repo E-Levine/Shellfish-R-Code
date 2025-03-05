@@ -34,3 +34,5 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 Shellfish-R-Code.Rproj
+# Excel outputs
+.xlsx
