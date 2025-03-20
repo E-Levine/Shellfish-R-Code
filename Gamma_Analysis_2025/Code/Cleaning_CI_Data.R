@@ -1,4 +1,4 @@
-### Gamma Regression Analysis - Clean CI Data ###
+### Gamma Regression Analysis - Clean CI Data ### added note
 #
 ## Compile CI data from ODIN - Select parameters, add Dates, Stations, & Sections
 ## Output of cleaned data
