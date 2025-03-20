@@ -15,102 +15,104 @@ library(cowplot)
 library(ggridges)
 library(ggh4x)
 
-#### This code is AB specific and is run w/ w.2018, w.2021 and all 2020 removed to avoid skewing results
+#### This code is AB specific and removes w.2018, w.2021 and all 2020 to avoid skewing results
 #### WQ data is included for all years
 
-AB.CI <-read.csv('ConditionIndexAB2016-2022.csv', skip = 0, na= "Z")
+AB.CI <-read.csv('Gamma_Analysis_2025/Data/Cleaned_Data/AB_filtered_CI_2016_2023.csv', skip = 0, na= "Z")
 View(AB.CI)
-AB.WQ <-read.csv('ABWQ_Coll16-22.csv', skip = 0, na="Z")
+AB.WQ <-read.csv('Gamma_Analysis_2025/Data/Cleaned_Data/AB_filtered_WQ_COLL_2016_2023.csv', skip = 0, na="Z")
 View(AB.WQ)
 
 #Removing columns not needed
-AB.WQ$Sample.Depth<-NULL
-AB.WQ$Turbidity.YSI<-NULL
 AB.CI$Location.ID<-NULL
 AB.CI$SampleEventID<-NULL
-AB.WQ$Location.ID<-NULL
 AB.CI$Shell.Height<-NULL
 AB.CI$Shell.Length<-NULL
 AB.CI$Shell.Width<-NULL
-AB.CI$Total.Weight<-NULL
-AB.CI$Tare.Pan.Weight <- NULL
-AB.CI$Tissue.Wet.Weight <-NULL
-AB.CI$Shell.Wet.Weight<-NULL
-AB.CI$Tissue.Dry.Weight<-NULL
-AB.CI$Final.tissue <-NULL
-AB.CI$Shell.Dry.Weight <-NULL
 
-# May need to convert to numeric - 
-str(AB.CI)
-AB.CI$CI <- as.numeric(AB.CI$CI)
+AB.WQ$SampleEvent<-NULL
+AB.WQ$Depth<-NULL
+#
+#### Calculate CI 
+# CI = (dry tissue weight/dry shell weight)*100
+AB.CI$FinalTissueWt <- AB.CI$TissueDryWeight - AB.CI$TarePanWeight
+#
+# Convert columns to numeric
+AB.CI$FinalTissueWt <- as.numeric(AB.CI$FinalTissueWt)
+AB.CI$ShellDryWeight <- as.numeric(AB.CI$ShellDryWeight)
+# Remove rows with missing values
+AB.CI <- na.omit(AB.CI)
+#
+# Perform calculation and add CI as a column
+CI <- (AB.CI$FinalTissueWt / AB.CI$ShellDryWeight) * 100
+AB.CI$CI<- CI
+#
+str(AB.CI)  #checking to see if we need to convert anything to numeric - 
+str(AB.WQ)
 
 ##There are NAs in the WQ dataset but removing them from one column removes all the rows
 #for the others so we're going to just keep them. This will at least make them numeric
-str(AB.WQ)
 AB.WQ$DO[AB.WQ$DO == "NA"] <- NA
 AB.WQ$DO <- as.numeric(AB.WQ$DO)
 
 AB.WQ$pH[AB.WQ$pH == "NA"] <- NA
 AB.WQ$pH <- as.numeric(AB.WQ$pH)
 
-AB.WQ$Temp[AB.WQ$Temp == "NA"] <- NA
-AB.WQ$Temp <- as.numeric(AB.WQ$Temp)
+AB.WQ$Temperature[AB.WQ$Temperature == "NA"] <- NA
+AB.WQ$Temperature <- as.numeric(AB.WQ$Temperature)
 
 AB.WQ$Salinity[AB.WQ$Salinity == "NA"] <- NA
 AB.WQ$Salinity <- as.numeric(AB.WQ$Salinity)
-
-##################
-##### Dates
-class(AB.CI$Date)
-AB.CI$Date <- as.Date(AB.CI$Date, format = "%m/%d/%Y")
-class(AB.WQ$Date) ##since WQ and CI are one df now, should be ok to not do this again
-unique(AB.WQ$Date)
-AB.WQ$Date <- as.Date(AB.WQ$Date, format = "%m/%d/%Y")
-
-
-## to make WQ match CI observations:
+#
+#
+##### Dates need to convert to Date format
+head(AB.CI$Date)
+head(AB.WQ$Date)
+AB.CI$Date <- as.Date(AB.CI$Date, format = "%Y-%m-%d")
+AB.WQ$Date <- as.Date(AB.WQ$Date, format = "%Y-%m-%d")
+#
+## Make WQ match CI observations:
 station_counts <- AB.CI %>%
-  group_by(Date, Region, Station) %>%
+  group_by(Date, Section, Station) %>%
   summarise(Repeat = n(), .groups = 'drop')
 
 WQ_avg <- AB.WQ %>%
-  group_by(Date, Region, Station) %>%  
+  group_by(Date, Section, Station) %>%  
   summarise(across(where(is.numeric), mean, na.rm = TRUE), .groups = "drop") 
 
-class(WQ_avg$Date)
-WQ_avg$Date <- as.Date(WQ_avg$Date, format = "%m/%d/%Y")
-
 AB.CI <- AB.CI %>%
-  left_join(WQ_avg, by = c("Date", "Region", "Station"))
+  left_join(WQ_avg, by = c("Date", "Section", "Station"))
+# ### STOP- error - dates not fully matching#### 
 
-# Separating into bay Regions
-AB.CI.West <- subset(AB.CI,Region == "W")
-AB.CI.Central <- subset(AB.CI,Region == "C")
-AB.CI.East <- subset(AB.CI,Region == "E")
+# Separating into bay Sections
+AB.CI.West <- subset(AB.CI,Section == "W")
+AB.CI.Central <- subset(AB.CI,Section == "C")
+AB.CI.East <- subset(AB.CI,Section == "E")
 
 AB.CI <- rbind(
-  transform(AB.CI.West, Group = "West Region"),
-  transform(AB.CI.Central, Group = "Central Region"),
-  transform(AB.CI.East, Group = "East Region")
+  transform(AB.CI.West, Group = "West Section"),
+  transform(AB.CI.Central, Group = "Central Section"),
+  transform(AB.CI.East, Group = "East Section")
 )
-Region.order <- c("West", "Central", "East")
+Section.order <- c("West", "Central", "East")
 
-AB.CI_year_breaks <- seq(as.Date("2016-01-01"), as.Date("2022-01-01"), by = "years")
+AB.CI_year_breaks <- seq(as.Date("2016-01-01"), as.Date("2023-01-01"), by = "years")
 year_labels <- format(AB.CI_year_breaks, "%Y")
 
-Region.colors <- c("West Region" = "#6D9DFF", 
-                    "Central Region" = "#FFC368", 
-                    "East Region" = "#FF7979")
+Section.colors <- c("West Section" = "#00a884", 
+                    "Central Section" = "#FF7979", 
+                    "East Section" = "#6D9DFF")
 
-AB.CI$Group <- factor(AB.CI$Group, levels = c("West Region", "Central Region", "East Region"))
-
+AB.CI$Group <- factor(AB.CI$Group, levels = c("West Section", "Central Section", "East Section"))
+#
+## Plot
 ggplot(AB.CI %>% drop_na(CI), aes(x = Date, y = CI, color = Group))+
   geom_point() +
   labs(title = "Condition Index of Eastern Oysters in Apalachicola Bay Over Time", 
        x = "Date", y = "Condition Index",
-       color = "Region") +
-  scale_color_manual(name = "Region", 
-                     values = Region.colors,
+       color = "Section") +
+  scale_color_manual(name = "Section", 
+                     values = Section.colors,
                      labels = c("West", "Central", "East")) +  # Assigning specific colors and labels
   theme_minimal() +
   scale_x_date(breaks = AB.CI_year_breaks, labels = year_labels)
@@ -120,9 +122,9 @@ ggplot(AB.CI, aes(x = Date, y = Temp, color = Group))+
   geom_point() +
   labs(title = "Temperature of Apalachicola Bay Over Time", 
        x = "Date", y = "Temperature",
-       color = "Region") +
-  scale_color_manual(name = "Region", 
-                     values = Region.colors,
+       color = "Section") +
+  scale_color_manual(name = "Section", 
+                     values = Section.colors,
                      labels = c("West", "Central", "East")) +  # Assigning specific colors and labels
   theme_minimal() +
   scale_x_date(breaks = AB.CI_year_breaks, labels = year_labels)
@@ -131,9 +133,9 @@ ggplot(AB.CI, aes(x = Date, y = Salinity, color = Group)) +
   geom_point() +
   labs(title = "Salinity of Apalachicola Bay Over Time", 
        x = "Date", y = "Salinity",
-       color = "Region") +
-  scale_color_manual(name = "Region", 
-                     values = Region.colors,
+       color = "Section") +
+  scale_color_manual(name = "Section", 
+                     values = Section.colors,
                      labels = c("West", "Central", "East")) +  # Assigning specific colors and labels
   theme_minimal() +
   scale_x_date(breaks = AB.CI_year_breaks, labels = year_labels)
@@ -143,9 +145,9 @@ ggplot(AB.CI, aes(x = Date, y = DO, color = Group)) +
   geom_line() +
   labs(title = "Dissolved Oxygen of Apalachicola Bay Over Time", 
        x = "Date", y = "D.O.",
-       color = "Region") +
-  scale_color_manual(name = "Region", 
-                     values = Region.colors,
+       color = "Section") +
+  scale_color_manual(name = "Section", 
+                     values = Section.colors,
                      labels = c("West", "Central", "East")) +  # Assigning specific colors and labels
   theme_minimal() +
   scale_x_date(breaks = AB.CI_year_breaks, labels = year_labels)
@@ -154,9 +156,9 @@ ggplot(AB.CI, aes(x = Date, y = pH, color = Group)) +
   geom_line() +
   labs(title = "pH of Apalachicola Bay Over Time", 
        x = "Date", y = "pH",
-       color = "Region") +
-  scale_color_manual(name = "Region", 
-                     values = Region.colors,
+       color = "Section") +
+  scale_color_manual(name = "Section", 
+                     values = Section.colors,
                      labels = c("West", "Central", "East")) +  # Assigning specific colors and labels
   theme_minimal() +
   scale_x_date(breaks = AB.CI_year_breaks, labels = year_labels)
@@ -177,24 +179,24 @@ AB.CI$pre.post.group <- interaction(AB.CI$pre.post, AB.CI$Group)
 
 #### Omit the 2020 data because it's not really all that comparable to the other year, also w.2018 and w.2021
 AB.CI <- AB.CI %>% filter(Year !="2020") %>% droplevels(.) 
-AB.CI <- AB.CI %>% filter(GroupYear != "West Region.2018", GroupYear != "West Region.2021") %>% droplevels(.)
+AB.CI <- AB.CI %>% filter(GroupYear != "West Section.2018", GroupYear != "West Section.2021") %>% droplevels(.)
 
 ###Separate scatterplots then stacked - CI
-(plot_west.ci <- ggplot(subset(AB.CI, Group == "West Region"), aes(x = Date, y = CI)) +
-    geom_point(color = Region.colors["West Region"]) +
-    labs(title = "West Region", x = "Date", y = "Condition Index") +
+(plot_west.ci <- ggplot(subset(AB.CI, Group == "West Section"), aes(x = Date, y = CI)) +
+    geom_point(color = Section.colors["West Section"]) +
+    labs(title = "West Section", x = "Date", y = "Condition Index") +
     scale_y_continuous(limits = c(0, 10)) +  
     theme_minimal())
 
-(plot_central.ci <- ggplot(subset(AB.CI, Group == "Central Region"), aes(x = Date, y = CI)) +
-    geom_point(color = Region.colors["Central Region"]) +
-    labs(title = "Central Region", x = "Date", y = "Condition Index") + 
+(plot_central.ci <- ggplot(subset(AB.CI, Group == "Central Section"), aes(x = Date, y = CI)) +
+    geom_point(color = Section.colors["Central Section"]) +
+    labs(title = "Central Section", x = "Date", y = "Condition Index") + 
     scale_y_continuous(limits = c(0, 10)) +
     theme_minimal())
 
-(plot_east.ci <- ggplot(subset(AB.CI, Group == "East Region"), aes(x = Date, y = CI)) +
-    geom_point(color = Region.colors["East Region"]) +
-    labs(title = "East Region", x = "Date", y = "Condition Index") + 
+(plot_east.ci <- ggplot(subset(AB.CI, Group == "East Section"), aes(x = Date, y = CI)) +
+    geom_point(color = Section.colors["East Section"]) +
+    labs(title = "East Section", x = "Date", y = "Condition Index") + 
     scale_y_continuous(limits = c(0, 10)) +
     theme_minimal())
 
@@ -262,7 +264,7 @@ summary(mGamma.Hb)
 ## Varying one variable at a time; Station and Date = NA to make population-level predictions (i.e., predictions that ignore the random effects subjects)
 newDat <- expand.grid(GroupYear = unique(AB.CI$GroupYear), Temp = unique(AB.CI$Temp, na.rm = T), 
                       Salinity = mean(AB.CI$Salinity, na.rm = T), DO = mean(AB.CI$DO, na.rm = T), 
-                      pH = mean(AB.CI$pH, na.rm = T), Station = NA, Date = NA) #Again, should Station be Region/Section instead?
+                      pH = mean(AB.CI$pH, na.rm = T), Station = NA, Date = NA) #Again, should Station be Section/Section instead?
 
 ##### Gamma: Now make some predictions, calculating the back-transformed mean and 95% confidence intervals by exponentiating the log-scale parameter estimates/predictions
 predsGamma <- predict(mGamma.Hb, newdata = newDat, type = "link", se.fit = T)
@@ -270,16 +272,16 @@ preddsGamma <- data.frame(newDat, fit = predsGamma$fit, se = predsGamma$se.fit)
 preddsGamma$mean <- exp(preddsGamma$fit)
 preddsGamma$lwr <- exp(preddsGamma$fit - 1.96*preddsGamma$se)
 preddsGamma$upr <- exp(preddsGamma$fit + 1.96*preddsGamma$se)
-preddsGamma <- preddsGamma %>% separate(GroupYear, into = c("Region", "Group", "Year"), remove = FALSE) %>%
-  mutate(LocationGroup = paste0(Region," ", Group))
+preddsGamma <- preddsGamma %>% separate(GroupYear, into = c("Section", "Group", "Year"), remove = FALSE) %>%
+  mutate(LocationGroup = paste0(Section," ", Group))
 
-desired_order <- c("West Region", "Central Region", "East Region")
+desired_order <- c("West Section", "Central Section", "East Section")
 preddsGamma$LocationGroup <- factor(preddsGamma$LocationGroup, levels = desired_order)
 preddsGamma$pre.post <- ifelse(preddsGamma$Year < 2020, "pre", "post")
 preddsGamma$Yearn<- as.numeric(preddsGamma$Year)
 
 ## Following graph has color coded facet strips to match the map and scatter plots above
-strip <- strip_themed(background_x = elem_list_rect(fill = Region.colors))
+strip <- strip_themed(background_x = elem_list_rect(fill = Section.colors))
 
 bar.colors <- c("2016"= "#FFBBBB",
                 "2017"="#56B4E9",
@@ -312,7 +314,7 @@ bar.colors <- c("2016"= "#FFBBBB",
 # Define custom theme with strip_themed() for background color and strip.text for text color
 #custom_theme <- function() {
 #  theme_bw() +
-#    theme(strip.background = element_rect(fill = Region.colors),
+#    theme(strip.background = element_rect(fill = Section.colors),
 #          strip.text = element_text(color = "white"))
 # }
 
@@ -320,7 +322,7 @@ bar.colors <- c("2016"= "#FFBBBB",
 #(gammaPlot.b <- ggplot(preddsGamma, aes(x = Yearn, y = mean, fill = Year)) + 
 #  geom_bar(stat = "identity", color = "black") + 
 #  geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0.25) + 
-#  facet_wrap2(~LocationGroup, strip = strip_themed(background_x = elem_list_rect(fill = Region.colors))) +
+#  facet_wrap2(~LocationGroup, strip = strip_themed(background_x = elem_list_rect(fill = Section.colors))) +
 #  custom_theme() + 
 #  theme(axis.text = element_text(color = "black"), 
 #        panel.grid.major.y = element_line(colour = "grey90"), 
@@ -333,7 +335,7 @@ bar.colors <- c("2016"= "#FFBBBB",
 #  geom_vline(data = preddsGamma, aes(xintercept = 2020), linetype = "dashed", color = "#4B0082"))
 
 ##### Summarize the raw data (useful to compare to model estimates)
-c_summ <- AB.CI %>% group_by(GroupYear) %>% summarise(N = n(), mn = mean(CI, na.rm = T), se = sd(CI, na.rm = T)/sqrt(N), lwr = mn-1.96*se, upr = mn+1.96*se) %>% separate(GroupYear, into = c("Region", "Group", "Year"), remove = FALSE) %>% mutate(LocationGroup = paste0(Region," ", Group))
+c_summ <- AB.CI %>% group_by(GroupYear) %>% summarise(N = n(), mn = mean(CI, na.rm = T), se = sd(CI, na.rm = T)/sqrt(N), lwr = mn-1.96*se, upr = mn+1.96*se) %>% separate(GroupYear, into = c("Section", "Group", "Year"), remove = FALSE) %>% mutate(LocationGroup = paste0(Section," ", Group))
 desired.order <- c("West", "Central", "East")
 c_summ$LocationGroup <- factor(c_summ$LocationGroup, levels = desired_order)
 c_summ <- c_summ %>% arrange(LocationGroup, Year)
@@ -349,11 +351,11 @@ c_summ <- c_summ %>% arrange(LocationGroup, Year)
   labs(x = NULL, y = "Raw data: Mean Condition Index"))
 #### does not match
 
-##### Compare means among years for each region
+##### Compare means among years for each Section
 (emmGamma <- data.frame(emmeans(mGamma.Hb, specs = pairwise ~ GroupYear)$emmeans)) # these are marginal or group-specific means
 (conGamma <- data.frame(emmeans(mGamma.Hb, specs = pairwise ~ GroupYear)$contrasts)) # these are comparisons among groups
 
-##### Break contrasts down by region and year...the contrasts above (con) are to extensive because 
+##### Break contrasts down by Section and year...the contrasts above (con) are to extensive because 
 ##### there are contrasts we don't care about, so this code reduced the number of comparisons and then 
 ##### adjusts p-values accordingly for multiple comparisons. Here, we are only comparing among years for
 ##### each group (west, central, and east)
