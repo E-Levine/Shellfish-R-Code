@@ -55,7 +55,8 @@ WQ <- WQ %>%
 WQ <- WQ %>%
   rename(
     Section = SectionName,
-    Station = StationNumber)
+    Station = StationNumber,
+    DO = DissolvedOxygen)
 
 # Tidy up the df
 WQ <- WQ %>%  
@@ -63,7 +64,7 @@ WQ <- WQ %>%
   filter(year(Date) >= Start_year & year(Date) <= End_year)%>%
   filter(SampleEvent == SampleEv)%>%
   select(Estuary, SampleEvent, Date, Section, StationName, Station, 
-         Temperature, Salinity, DissolvedOxygen, pH, 
+         Temperature, Salinity, DO, pH, 
          Depth, SampleDepth, Secchi, TurbidityYSI, TurbidityHach)
 
 #Save to .csv
