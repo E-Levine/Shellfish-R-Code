@@ -64,8 +64,7 @@ WQ <- WQ %>%
   filter(year(Date) >= Start_year & year(Date) <= End_year)%>%
   filter(SampleEvent == SampleEv)%>%
   select(Estuary, SampleEvent, Date, Section, StationName, Station, 
-         Temperature, Salinity, DO, pH, 
-         Depth, SampleDepth, Secchi, TurbidityYSI, TurbidityHach)
+         Temperature, Salinity, DO, pH, Depth)
 
 #Save to .csv
 write.csv(WQ, 
