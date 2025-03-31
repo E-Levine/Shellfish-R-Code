@@ -23,11 +23,12 @@ View(AB.CIwq)
 ## Need to rerun the mGamma code again. Because mGamma.A had lowest AIC score, we will only use that one moving forward for comparisons
 ## Scale WQ parameters
 str(AB.CIwq)
-AB.CIwq$CI <- as.numeric(AB.CIwq$CI)
-AB.CIwq$Temperature <- as.numeric(AB.CIwq$Temperature)
-AB.CIwq$Salinity <- as.numeric(AB.CIwq$Salinity)
-AB.CIwq$DO <- as.numeric(AB.CIwq$DO)
-AB.CIwq$pH <- as.numeric(AB.CIwq$pH)
+## run following code if any are not numeric
+#AB.CIwq$CI <- as.numeric(AB.CIwq$CI)
+#AB.CIwq$Temperature <- as.numeric(AB.CIwq$Temperature)
+#AB.CIwq$Salinity <- as.numeric(AB.CIwq$Salinity)
+#AB.CIwq$DO <- as.numeric(AB.CIwq$DO)
+#AB.CIwq$pH <- as.numeric(AB.CIwq$pH)
 
 scDO <- scale(AB.CIwq$DO)
 scTemp <- scale(AB.CIwq$Temperature)
@@ -36,8 +37,8 @@ scpH <- scale(AB.CIwq$pH)
 #
 #
 table(is.na(AB.CIwq))
-## We have some NA values so good to remove them first (most functions will remove them automatically)
-AB.CIwq <- AB.CIwq %>% filter(complete.cases(.))
+## Run following code if NAs are present. most functions will remove them automatically but good to check 
+#AB.CIwq <- AB.CIwq %>% filter(complete.cases(.))
 
 ##### Fit gamma regressions with the fixed effect all wq parameters 
 AB.CIwq$GYD <- droplevels(interaction(AB.CIwq$GroupYear, AB.CIwq$Date))
@@ -61,6 +62,7 @@ mGamma.A <- glmmTMB(CI ~ Temperature + Salinity + DO + pH + GroupYear + (1|GYD),
     mutate(p_adj = p.adjust(p.value, method = "fdr")) %>% arrange(Group1, Group2) %>% 
     mutate(p.value = round(p.value, 3), p_adj = round(p_adj, 3)))
 # Convert Group1 and Group2 to factors with desired order
+desired_order <- c("West Section", "Central Section", "East Section")
 (Gamma_contrasts <- Gamma_contrasts %>%
     mutate(Group1 = factor(Group1, levels = desired_order),
            Group2 = factor(Group2, levels = desired_order)) %>%
@@ -74,7 +76,7 @@ mGamma.A <- glmmTMB(CI ~ Temperature + Salinity + DO + pH + GroupYear + (1|GYD),
 #write.table(gamma_important_contrasts, "Gamma_contrastsa.txt", sep = "\t", row.names = FALSE)
 
 ##Make a table for CI means
-means <- aggregate(CI ~ AB.CI$GroupYear, data = AB.CI, FUN= mean, levels = desired_order)
+means <- aggregate(CI ~ AB.CIwq$GroupYear, data = AB.CIwq, FUN= mean, levels = desired_order)
 means
 write.table(means, "means.a.txt", sep = "\t", row.names = FALSE)
 #### 
