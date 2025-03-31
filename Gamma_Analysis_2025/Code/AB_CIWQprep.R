@@ -18,9 +18,9 @@ library(ggh4x)
 #### This code is AB specific and removes w.2018, w.2021 and all 2020 to avoid skewing results
 #### WQ data is included for all years
 
-AB.CI <-read.csv('Gamma_Analysis_2025/Data/Cleaned_Data/AB_filtered_CI_2016_2023.csv', skip = 0, na= "Z")
+AB.CI <-read.csv('Data/Cleaned_Data/AB_filtered_CI_2016_2023.csv', skip = 0, na= "Z")
 View(AB.CI)
-AB.WQ <-read.csv('Gamma_Analysis_2025/Data/Cleaned_Data/AB_filtered_WQ_COLL_2016_2023.csv', skip = 0, na="Z")
+AB.WQ <-read.csv('Data/Cleaned_Data/AB_filtered_WQ_COLL_2016_2023.csv', skip = 0, na="Z")
 View(AB.WQ)
 
 #Removing columns not needed
@@ -118,7 +118,7 @@ ggplot(AB.CI %>% drop_na(CI), aes(x = Date, y = CI, color = Group))+
   scale_x_date(breaks = AB.CI_year_breaks, labels = year_labels)
   
 ##do one for each WQ parameter
-ggplot(AB.CI, aes(x = Date, y = Temp, color = Group))+   
+ggplot(AB.CI, aes(x = Date, y = Temperature, color = Group))+   
   geom_point() +
   labs(title = "Temperature of Apalachicola Bay Over Time", 
        x = "Date", y = "Temperature",
@@ -177,7 +177,7 @@ AB.CI$pre.post <- factor(AB.CI$Year, levels = c("2016", "2017", "2018", "2019", 
 ##### Then combine with Groups to make a new variable, pre_post_group
 AB.CI$pre.post.group <- interaction(AB.CI$pre.post, AB.CI$Group)
 
-#### Omit the 2020 data because it's not really all that comparable to the other year, also w.2018 and w.2021
+#### Omit the 2020, w.2018 and w.2021 data to avoid skewing results
 AB.CI <- AB.CI %>% filter(Year !="2020") %>% droplevels(.) 
 AB.CI <- AB.CI %>% filter(GroupYear != "West Section.2018", GroupYear != "West Section.2021") %>% droplevels(.)
 
@@ -208,7 +208,7 @@ combined_plot.ci
 ### on to the Gamma analysis ###
 ## Scale WQ parameters? Taking awhile
 scDO <- scale(AB.CI$DO)
-scTemp <- scale(AB.CI$Temp)
+scTemp <- scale(AB.CI$Temperature)
 scSalinity <- scale(AB.CI$Salinity)
 scpH <- scale(AB.CI$pH)
 #
@@ -229,7 +229,7 @@ mGamma.B <- glmmTMB(CI ~ Year, family = Gamma(link = "log"), data = AB.CI)
 mGamma.C <- glmmTMB(CI ~ pre.post.group, family = Gamma(link = "log"), data = AB.CI)
 
 ##### Fit gamma regressions with the fixed effect Temp 
-mGamma.D <- glmmTMB(CI ~ Temp, family = Gamma(link = "log"), data = AB.CI)
+mGamma.D <- glmmTMB(CI ~ Temperature, family = Gamma(link = "log"), data = AB.CI)
 
 ##### Fit gamma regressions with the fixed effect Sal 
 mGamma.E <- glmmTMB(CI ~ Salinity, family = Gamma(link = "log"), data = AB.CI)
@@ -241,10 +241,10 @@ mGamma.F <- glmmTMB(CI ~ DO, family = Gamma(link = "log"), data = AB.CI)
 mGamma.G <- glmmTMB(CI ~ pH, family = Gamma(link = "log"), data = AB.CI)
 
 ##### Fit gamma regressions with the fixed effect all wq parameters 
-mGamma.H <- glmmTMB(CI ~ Temp + Salinity + DO + pH + GroupYear+ (1 | Station) +(1 | Date), ##Since we are more section focused, should I change Station to Section?
+mGamma.H <- glmmTMB(CI ~ Temperature+ Salinity + DO + pH + GroupYear+ (1 | Station) +(1 | Date), ##Since we are more section focused, should I change Station to Section?
                     family = Gamma(link = "log"), 
                     data = AB.CI)
-mGamma.Hb <- glmmTMB(CI ~ Temp + Salinity + DO + pH + GroupYear+ (1 | Station) +(1 | Date), 
+mGamma.Hb <- glmmTMB(CI ~ Temperature+ Salinity + DO + pH + GroupYear+ (1 | Station) +(1 | Date), 
                      dispformula = ~ GroupYear, #Modeling dispersion as a function of fixed and random effects 
                      family = Gamma(link = "log"), 
                      data = AB.CI)
@@ -262,7 +262,7 @@ simulateResiduals(mGamma.Hb, n = 1000, plot = T)
 summary(mGamma.Hb)
 
 ## Varying one variable at a time; Station and Date = NA to make population-level predictions (i.e., predictions that ignore the random effects subjects)
-newDat <- expand.grid(GroupYear = unique(AB.CI$GroupYear), Temp = unique(AB.CI$Temp, na.rm = T), 
+newDat <- expand.grid(GroupYear = unique(AB.CI$GroupYear), Temperature= unique(AB.CI$Temperature, na.rm = T), 
                       Salinity = mean(AB.CI$Salinity, na.rm = T), DO = mean(AB.CI$DO, na.rm = T), 
                       pH = mean(AB.CI$pH, na.rm = T), Station = NA, Date = NA) #Again, should Station be Section/Section instead?
 
@@ -387,7 +387,7 @@ write.table(means, "means.a.txt", sep = "\t", row.names = FALSE)
 ## (eg. min, mean, and max of salinity) if you want to show the effect of two 
 ## continuous predictors...
 newDat2 <- expand.grid(GroupYear = unique(AB.CI$GroupYear), 
-              Temp = unique(AB.CI$Temp, na.rm = T), 
+              Temperature= unique(AB.CI$Temperature, na.rm = T), 
               Salinity = c(min(AB.CI$Salinity, na.rm = T), mean(AB.CI$Salinity, na.rm = T), max(AB.CI$Salinity, na.rm = T)), 
               DO = mean(AB.CI$DO, na.rm = T),
               pH = mean(AB.CI$pH, na.rm = T), 
