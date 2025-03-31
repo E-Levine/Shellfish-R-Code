@@ -3,12 +3,6 @@
 # This code is to prepare the cleaned data sets for gamma analysis and create plots used for reports
 #
 library(Matrix)
-library(glmmTMB)
-library(DHARMa)
-library(tidyverse)
-library(lubridate)
-library(emmeans)
-library(AICcmodavg)
 library(ggplot2)
 library(dplyr)
 library(cowplot)
