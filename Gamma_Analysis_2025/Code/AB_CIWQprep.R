@@ -20,9 +20,9 @@ View(AB.WQ)
 #Removing columns not needed
 AB.CI$Location.ID<-NULL
 AB.CI$SampleEventID<-NULL
-AB.CI$Shell.Height<-NULL
-AB.CI$Shell.Length<-NULL
-AB.CI$Shell.Width<-NULL
+AB.CI$ShellHeight<-NULL
+AB.CI$ShellLength<-NULL
+AB.CI$ShellWidth<-NULL
 
 AB.WQ$SampleEvent<-NULL
 AB.WQ$Depth<-NULL
@@ -198,7 +198,7 @@ combined_plot.ci <- plot_grid(plot_west.ci, plot_central.ci, plot_east.ci, ncol 
 combined_plot.ci
 
 ### export AB.CIwq as new .csv and move on to new script for only analysis
-write.csv(CI, 
+write.csv(AB.CIwq, 
           file = paste0("Data/Cleaned_data/","AB_CIwq_2016_2023.csv"), 
           row.names = FALSE)
 
