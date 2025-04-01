@@ -52,7 +52,7 @@ mGamma.A <- glmmTMB(CI ~ Temperature + Salinity + DO + pH + GroupYear + (1|GYD),
 (conGamma <- data.frame(emmeans(mGamma.A, specs = pairwise ~ GroupYear)$contrasts)) # these are comparisons among groups
 
 ##### Break contrasts down by Section and year...the contrasts above (con) are to extensive because 
-##### there are contrasts we don't care about, so this code reduced the number of comparisons and then 
+##### there are contrasts we don't care about, so this code reduces the number of comparisons and then 
 ##### adjusts p-values accordingly for multiple comparisons. Here, we are only comparing among years for
 ##### each group (west, central, and east)
 (Gamma_contrasts <- conGamma %>% separate(contrast, into = c("contrast1", "contrast2"), sep = "\\-", extra = "merge") %>% 
@@ -70,10 +70,10 @@ desired_order <- c("West Section", "Central Section", "East Section")
 
 ##### Filter for statistically important (not necessarily biologically important) pairwise comparisons
 (gamma_important_contrasts <- Gamma_contrasts[Gamma_contrasts$p_adj<0.05,])
-## nothing significant so zero rows
+## nothing significant so zero rows. @colin, does this mean there is no significant effect on CI by WQ over the years?
 
 # Save contrast outputs as tab-delimited text
-#write.table(gamma_important_contrasts, "Gamma_contrastsa.txt", sep = "\t", row.names = FALSE)
+#write.table(gamma_important_contrasts, "Gamma_contrasts.txt", sep = "\t", row.names = FALSE)
 
 ##Make a table for CI means
 means <- aggregate(CI ~ AB.CIwq$GroupYear, data = AB.CIwq, FUN= mean, levels = desired_order)
