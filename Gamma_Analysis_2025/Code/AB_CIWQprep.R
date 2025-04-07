@@ -232,7 +232,7 @@ scpH <- scale(AB.CIwq$pH)
 #
 table(is.na(AB.CIwq))
 ## We have some NA values so good to remove them first (most functions will remove them automatically)
-AB.CIwq <- AB.CIwq %>% filter(complete.cases(.))
+#AB.CIwq <- AB.CIwq %>% filter(complete.cases(.)) #NAs needed for mGamma.B
 
 ##### Fit gamma regressions with the fixed effect all wq parameters 
 AB.CIwq$GYD <- droplevels(interaction(AB.CIwq$GroupYear, AB.CIwq$Date))
@@ -394,22 +394,25 @@ preddsGamma.B$LocationGroup <- factor(preddsGamma.B$LocationGroup, levels = desi
 preddsGamma.B$pre.post <- ifelse(preddsGamma.B$Year < 2020, "pre", "post")
 preddsGamma.B$Yearn<- as.numeric(preddsGamma.B$Year)
 # plot CI change over years
+vline_data <- data.frame(Yearn = 2020, label = "Oyster Fishery Closed")
 (gammaPlot.B <- ggplot(preddsGamma.B, aes(x = Yearn, y = mean, fill = Year)) + 
-    geom_bar(stat = "identity", color = "black") + 
-    scale_fill_manual(values = yr.colors) +
-    geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0.25) + 
-    facet_wrap(~LocationGroup) +
-    facet_wrap2(~ LocationGroup, strip = strip2) +
-    theme_bw() + 
-    theme(axis.text = element_text(color = "black"), 
-          panel.grid.major.y = element_line(colour = "grey90"), 
-          panel.grid.minor.y = element_line(colour = "grey90", linetype = "dashed"), 
-          panel.grid.major.x = element_blank()) + 
-    scale_x_continuous(breaks = unique(preddsGamma.B$Yearn)) + 
-    scale_y_continuous(limits = c(0,4), 
-                       breaks = seq(0,4, 0.25), expand = expansion(add = c(0,0))) + 
-    labs(x = NULL, y = "Gamma: Mean CI", title = "Condition Index of Eastern Oysters in Apalachicola Bay 2016-2023") +
-    geom_vline(data = preddsGamma.B, aes(xintercept = 2020), linetype = "dashed", color = "#4B0082"))
+  geom_bar(stat = "identity", color = "black") + 
+  scale_fill_manual(values = yr.colors) +
+  geom_errorbar(aes(ymin = lwr, ymax = upr), width = 0.25) + 
+  facet_wrap2(~ LocationGroup, strip = strip2) +
+  theme_bw() + 
+  theme(axis.text = element_text(color = "black"), 
+        panel.grid.major.y = element_line(colour = "grey90"), 
+        panel.grid.minor.y = element_line(colour = "grey90", linetype = "dashed"), 
+        panel.grid.major.x = element_blank()) + 
+  scale_x_continuous(breaks = unique(preddsGamma.B$Yearn)) + 
+  scale_y_continuous(limits = c(0, 4), 
+                     breaks = seq(0, 4, 0.25), expand = expansion(add = c(0, 0))) + 
+  labs(x = NULL, y = "Gamma: Mean CI", 
+       title = "Condition Index of Eastern Oysters in Apalachicola Bay 2016-2023") +
+  geom_vline(data = vline_data, aes(xintercept = Yearn, linetype = label), 
+             color = "#4B0082", linewidth = 0.8) +
+  scale_linetype_manual(name = NULL, values = c("Oyster Fishery Closed" = "dashed")))
 
 ##### Summarize the raw CI data (useful to compare to model estimates)
 c_summ <- AB.CIwq %>% group_by(GroupYear) %>% 
