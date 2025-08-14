@@ -1,0 +1,88 @@
+---
+title: "Shell_Pest_2025"
+output: html_document
+date: Sys.Date()
+---
+
+```{r VariableSet, echo = FALSE, warning = FALSE, message = FALSE}
+# Set your variables
+Estuaries <- c("AB") # Limits to only Apalachicola Bay
+Database = "OysterLocalMD20250804"  # Set the local database to use
+Server = "localhost\\LOCALSQL" # Set the local Server to use
+```
+
+```{r PackageLoad, echo = FALSE, warning = FALSE, message = FALSE}
+# Load necessary R packages
+library(tidyverse)
+library(odbc)
+library(DBI)
+library(dbplyr)
+library(lubridate)
+library(knitr)
+library(openxlsx)
+```
+
+```{r ConfigureChunks, warning=FALSE, include=FALSE}
+# Configure chunks
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+```{r Functions}
+### XXX Functions ###
+
+
+
+
+```
+
+```{r DatabaseDownload}
+# Connect to Local database server and pull all necessary data, then close connection 
+con <- dbConnect(odbc(),
+                    Driver = "SQL Server", 
+                    Server = Server,
+                    Database = Database,
+                    Authentication = "ActiveDirectoryIntegrated")
+
+hsdbShellPest <- tbl(con,in_schema("hsdb", "ShellPest")) %>%
+  collect() %>%
+  filter(substring(SampleEventID, 1, 2) %in% Estuaries)
+
+hsdbConditionIndex <- tbl(con,in_schema("hsdb", "ConditionIndex")) %>%
+  collect() %>%
+  filter(substring(SampleEventID, 1, 2) %in% Estuaries)
+
+DBI::dbDisconnect(con)
+```
+
+```{r DataFiltersBasic}
+# Filter data frames so that only data collected for inclusion in the DMFM Report are present.
+ShellPest <- hsdbShellPest %>% 
+  mutate(Section = substring(OysterID, 3, 3),
+         Year = as.integer(substring(SampleEventID, 8, 11)),
+         Month = as.integer(substring(SampleEventID, 12, 13)),
+         Season = case_when(
+          Month >= 1 & Month <= 3 ~ "Winter",
+          Month >= 4 & Month <= 6 ~ "Spring",
+          Month >= 7 & Month <= 9 ~ "Summer",
+          Month >= 10 & Month <= 12 ~ "Fall",
+          TRUE ~ "Invalid")) %>%
+  left_join(hsdbConditionIndex, by = c("OysterID")) %>%
+  select(OysterID,
+         PhotoSurface,
+         TotalArea,
+         ClionaArea,
+         PolydoraArea,
+         ClamCount,
+         Section,
+         Year,
+         Month,
+         Season,
+         ShellHeight,
+         TotalWeight) %>%
+  filter(Year < 2023)
+
+```
