@@ -59,7 +59,7 @@ DBI::dbDisconnect(con)
 ```
 
 ```{r DataFiltersBasic}
-# Filter data frames so that only data collected for inclusion in the DMFM Report are present.
+# Adjust data to include necessary fields and exclude incomplete years.
 ShellPest <- hsdbShellPest %>% 
   mutate(Section = substring(OysterID, 3, 3),
          Year = as.integer(substring(SampleEventID, 8, 11)),
@@ -84,5 +84,114 @@ ShellPest <- hsdbShellPest %>%
          ShellHeight,
          TotalWeight) %>%
   filter(Year < 2023)
+
+# Adjust to provide the sum values needed for calculations
+ShellPest1 <- ShellPest %>%
+  group_by(OysterID,
+           Section,
+           Year,
+           Month,
+           Season,
+           ShellHeight,
+           TotalWeight) %>%
+  summarise(TotalSurfaceArea = sum(TotalArea, na.rm = TRUE),
+         TotalExternalArea = sum(
+           if_else(substring(PhotoSurface, 2, 2) == "E", TotalArea, 0), na.rm = TRUE),
+         TotalInternalArea = sum(
+           if_else(substring(PhotoSurface, 2, 2) == "I", TotalArea, 0), na.rm = TRUE),
+         TotalTopArea = sum(
+           if_else(substring(PhotoSurface, 1, 1) == "T", TotalArea, 0), na.rm = TRUE),
+         TotalBottomArea = sum(
+           if_else(substring(PhotoSurface, 1, 1) == "B", TotalArea, 0), na.rm = TRUE),
+         TotalClionaArea = sum(ClionaArea, na.rm = TRUE),
+         ClionaExternalArea = sum(
+           if_else(substring(PhotoSurface, 2, 2) == "E", ClionaArea, 0), na.rm = TRUE),
+         ClionaInternalArea = sum(
+           if_else(substring(PhotoSurface, 2, 2) == "I", ClionaArea, 0), na.rm = TRUE),
+         ClionaTopArea = sum(
+           if_else(substring(PhotoSurface, 1, 1) == "T", ClionaArea, 0), na.rm = TRUE),
+         ClionaBottomArea = sum(
+           if_else(substring(PhotoSurface, 1, 1) == "B", ClionaArea, 0), na.rm = TRUE),
+         TotalPolydoraArea = sum(PolydoraArea, na.rm = TRUE),
+         PolydoraExternalArea = sum(
+           if_else(substring(PhotoSurface, 2, 2) == "E", PolydoraArea, 0), na.rm = TRUE),
+         PolydoraInternalArea = sum(
+           if_else(substring(PhotoSurface, 2, 2) == "I", PolydoraArea, 0), na.rm = TRUE),
+         PolydoraTopArea = sum(
+           if_else(substring(PhotoSurface, 1, 1) == "T", PolydoraArea, 0), na.rm = TRUE),
+         PolydoraBottomArea = sum(
+           if_else(substring(PhotoSurface, 1, 1) == "B", PolydoraArea, 0), na.rm = TRUE),
+         TotalClamCount = sum(ClamCount, na.rm = TRUE),
+         ClamCountExternal = sum(
+           if_else(substring(PhotoSurface, 2, 2) == "E", ClamCount, 0), na.rm = TRUE),
+         ClamCountInternal = sum(
+           if_else(substring(PhotoSurface, 2, 2) == "I", ClamCount, 0), na.rm = TRUE),
+         ClamCountTop = sum(
+           if_else(substring(PhotoSurface, 1, 1) == "T", ClamCount, 0), na.rm = TRUE),
+         ClamCountBottom = sum(
+           if_else(substring(PhotoSurface, 1, 1) == "B", ClamCount, 0), na.rm = TRUE)
+         ) 
+
+# Adjust to provide the calculated values for prevalence and intensity
+ShellPest2 <- ShellPest1 %>%
+  mutate(ClionaIntensityWholeOyster = if_else(TotalClionaArea == 0, 0, 
+                                              round(TotalClionaArea / TotalSurfaceArea, 4)),
+         ClionaIntensityExternal = if_else(ClionaExternalArea == 0, 0, 
+                                              round(ClionaExternalArea / TotalExternalArea, 4)),
+         ClionaIntensityInternal = if_else(ClionaInternalArea == 0, 0, 
+                                              round(ClionaInternalArea / TotalInternalArea, 4)),
+         ClionaIntensityTop = if_else(ClionaTopArea == 0, 0, 
+                                              round(ClionaTopArea / TotalTopArea, 4)),
+         ClionaIntensityBottom = if_else(ClionaBottomArea == 0, 0, 
+                                              round(ClionaBottomArea / TotalBottomArea, 4)),
+         PolydoraIntensityWholeOyster = if_else(TotalPolydoraArea == 0, 0, 
+                                              round(TotalPolydoraArea / TotalSurfaceArea, 4)),
+         PolydoraIntensityExternal = if_else(PolydoraExternalArea == 0, 0, 
+                                              round(PolydoraExternalArea / TotalExternalArea, 4)),
+         PolydoraIntensityInternal = if_else(PolydoraInternalArea == 0, 0, 
+                                              round(PolydoraInternalArea / TotalInternalArea, 4)),
+         PolydoraIntensityTop = if_else(PolydoraTopArea == 0, 0, 
+                                              round(PolydoraTopArea / TotalTopArea, 4)),
+         PolydoraIntensityBottom = if_else(PolydoraBottomArea == 0, 0, 
+                                              round(PolydoraBottomArea / TotalBottomArea, 4)),
+         ClamIntensityWholeOyster = if_else(TotalClamCount == 0, 0, 
+                                              round(TotalClamCount / TotalSurfaceArea, 4)),
+         ClamIntensityExternal = if_else(ClamCountExternal == 0, 0, 
+                                              round(ClamCountExternal / TotalExternalArea, 4)),
+         ClamIntensityInternal = if_else(ClamCountInternal == 0, 0, 
+                                              round(ClamCountInternal / TotalInternalArea, 4)),
+         ClamIntensityTop = if_else(ClamCountTop == 0, 0, 
+                                              round(ClamCountTop / TotalTopArea, 4)),
+         ClamIntensityBottom = if_else(ClamCountBottom == 0, 0, 
+                                              round(ClamCountBottom / TotalBottomArea, 4))
+   ) %>%
+  select(
+    OysterID,
+    Section,
+    Year,
+    Month,
+    Season,
+    ShellHeight,
+    TotalWeight,
+    TotalClamCount,
+    ClamCountExternal,
+    ClamCountInternal,
+    ClamCountTop,
+    ClamCountBottom,
+    ClionaIntensityWholeOyster,
+    ClionaIntensityExternal,
+    ClionaIntensityInternal,
+    ClionaIntensityTop,
+    ClionaIntensityBottom,
+    PolydoraIntensityWholeOyster,
+    PolydoraIntensityExternal,
+    PolydoraIntensityInternal,
+    PolydoraIntensityTop,
+    PolydoraIntensityBottom,
+    ClamIntensityWholeOyster,
+    ClamIntensityExternal,
+    ClamIntensityInternal,
+    ClamIntensityTop,
+    ClamIntensityBottom)
 
 ```
