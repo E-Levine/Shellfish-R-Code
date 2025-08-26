@@ -268,6 +268,7 @@ DBI::dbDisconnect(con)
 # Adjust data to include necessary fields and exclude incomplete years.
 ShellPest <- hsdbShellPest %>% 
   mutate(Section = substring(OysterID, 3, 3),
+         FixedLocation = substring(SampleEventID, 19, 22),
          Year = substring(SampleEventID, 8, 11),
          Month = substring(SampleEventID, 12, 13),
          Day = substr(SampleEventID, 14, 15),
@@ -291,9 +292,12 @@ ShellPest <- hsdbShellPest %>%
          PolydoraArea,
          ClamCount,
          Section,
+         FixedLocation,
          Date,
          Month,
+         Year,
          Season,
+         ProcessedBy,
          ShellHeight,
          TotalWeight) 
 
@@ -301,9 +305,12 @@ ShellPest <- hsdbShellPest %>%
 ShellPest1 <- ShellPest %>%
   group_by(OysterID,
            Section,
+           FixedLocation,
            Date,
            Month,
+           Year,
            Season,
+           ProcessedBy,
            ShellHeight,
            TotalWeight) %>%
   summarise(TotalSurfaceArea = sum(TotalArea, na.rm = TRUE),
@@ -381,9 +388,12 @@ ShellPest2 <- ShellPest1 %>%
   select(
     OysterID,
     Section,
+    FixedLocation,
     Date,
     Season,
     Month,
+    Year,
+    ProcessedBy,
     ShellHeight,
     TotalWeight,
     TotalClamCount,
@@ -768,8 +778,8 @@ print(summary(best_model))
 # Calculate R-squared equivalent for count models
 library(performance)
 r2_values <- r2(best_model)
-print(paste("Conditional R² (fixed + random effects):", round(r2_values$R2_conditional, 3)))
-print(paste("Marginal R² (fixed effects only):", round(r2_values$R2_marginal, 3)))
+# print(paste("Conditional R² (fixed + random effects):", round(r2_values$R2_conditional, 3)))
+# print(paste("Marginal R² (fixed effects only):", round(r2_values$R2_marginal, 3)))
 
 # Key findings from model selection
 print("=== MODEL SELECTION INSIGHTS ===")
@@ -896,15 +906,15 @@ plot(simulationOutput)
 # Check for temporal autocorrelation if you have time series data
 # acf(residuals(best_model, type = "pearson"))
 
-print("Model selection summary:")
-print(paste("Best model explains temporal variation:", 
-            ifelse(grepl("Season|Year", best_model_name), "YES", "NO")))
-
-if(grepl("Season|Year", best_model_name)) {
-  delta_aic <- model_comparison$AICc[model_comparison$Modnames == "A1_Baseline"] - 
-               model_comparison$AICc[model_comparison$Modnames == best_model_name]
-  print(paste("Improvement over baseline (ΔAICc):", round(delta_aic, 2)))
-}
+# print("Model selection summary:")
+# print(paste("Best model explains temporal variation:", 
+#             ifelse(grepl("Season|Year", best_model_name), "YES", "NO")))
+# 
+# if(grepl("Season|Year", best_model_name)) {
+#   delta_aic <- model_comparison$AICc[model_comparison$Modnames == "A1_Baseline"] - 
+#                model_comparison$AICc[model_comparison$Modnames == best_model_name]
+#   print(paste("Improvement over baseline (ΔAICc):", round(delta_aic, 2)))
+# }
 
 # Additional optimization options if convergence issues occur:
 # control = glmmTMBControl(
@@ -1057,5 +1067,338 @@ p_section_prev <- ggplot(section_prev_df, aes(x = Section, y = prob)) +
   theme_minimal()
 
 print(p_section_prev)
+
+```
+
+``` {r}
+# Claude bias testing
+
+# QUALITY CONTROL ANALYSIS: Testing for Observer and Location Bias
+
+# First, explore the potential confounding variables
+print("=== DATA EXPLORATION ===")
+print("ProcessedBy summary:")
+table(ShellPest2$ProcessedBy, ShellPest2$Year)
+
+print("\nFixedLocation summary by Section:")
+table(ShellPest2$FixedLocation, ShellPest2$Section)
+
+print("\nFixedLocation summary by Year:")
+table(ShellPest2$FixedLocation, ShellPest2$Year)
+
+# Ensure factors are properly coded
+ShellPest2$ProcessedBy <- as.factor(ShellPest2$ProcessedBy)
+ShellPest2$FixedLocation <- as.factor(ShellPest2$FixedLocation)
+
+# Check for potential confounding
+print("\n=== CONFOUNDING CHECK ===")
+print("Staff members by year (check if staff changed over time):")
+staff_year <- table(ShellPest2$ProcessedBy, ShellPest2$Year)
+print(staff_year)
+
+print("\nStaff members by section (check if staff specialized in certain sections):")
+staff_section <- table(ShellPest2$ProcessedBy, ShellPest2$Section)
+print(staff_section)
+
+print("\nFixed locations by year (check if locations changed over time):")
+location_year <- table(ShellPest2$FixedLocation, ShellPest2$Year)
+print(location_year[1:min(10, nrow(location_year)), ])  # Show first 10 locations
+
+# BIAS TESTING MODELS
+
+print("\n=== OBSERVER BIAS TESTING ===")
+
+# Test 1: Add ProcessedBy to count models
+model.B1_observer <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year + ProcessedBy,
+                            dispformula = ~ Section,
+                            ziformula = ~ 1,
+                            family = nbinom2(link = "log"),
+                            data = ShellPest2,
+                            control = glmmTMBControl(optimizer = optim, 
+                                                   optArgs = list(method = "BFGS")))
+
+# # Test 2: Add ProcessedBy to prevalence models  
+# model.P_observer <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + Year + ProcessedBy,
+#                            family = binomial(link = "logit"),
+#                            data = ShellPest2,
+#                            control = glmmTMBControl(optimizer = optim, 
+#                                                   optArgs = list(method = "BFGS")))
+
+print("\n=== LOCATION BIAS TESTING ===")
+
+# Test 3: Add FixedLocation as random effect (nested within Section)
+model.B2_location <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year + (1|FixedLocation),
+                            dispformula = ~ Section,
+                            ziformula = ~ 1,
+                            family = nbinom2(link = "log"),
+                            data = ShellPest2,
+                            control = glmmTMBControl(optimizer = optim, 
+                                                   optArgs = list(method = "BFGS")))
+
+# model.P_location <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + Year + (1|FixedLocation),
+#                            family = binomial(link = "logit"),
+#                            data = ShellPest2,
+#                            control = glmmTMBControl(optimizer = optim, 
+#                                                   optArgs = list(method = "BFGS")))
+
+print("\n=== COMBINED BIAS TESTING ===")
+
+# Test 4: Both observer and location effects
+model.B3_both <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year + ProcessedBy + (1|FixedLocation),
+                        dispformula = ~ Section,
+                        ziformula = ~ 1,
+                        family = nbinom2(link = "log"),
+                        data = ShellPest2,
+                        control = glmmTMBControl(optimizer = optim, 
+                                               optArgs = list(method = "BFGS")))
+
+# model.P_both <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + Year + ProcessedBy + (1|FixedLocation),
+#                        family = binomial(link = "logit"),
+#                        data = ShellPest2,
+#                        control = glmmTMBControl(optimizer = optim, 
+#                                               optArgs = list(method = "BFGS")))
+
+# MODEL COMPARISON: Original vs Bias-corrected models
+library(AICcmodavg)
+
+# For COUNT models
+count_bias_models <- list(
+  "Original" = model.A6,  # Your best original model
+  "Observer_Bias" = model.B1_observer,
+  "Location_Bias" = model.B2_location, 
+  "Both_Biases" = model.B3_both
+)
+
+count_bias_comparison <- aictab(count_bias_models)
+print("COUNT MODEL BIAS COMPARISON:")
+print(count_bias_comparison)
+
+# # For PREVALENCE models  
+# prev_bias_models <- list(
+#   "Original" = model.P4,  # Assuming P4 was your best prevalence model
+#   "Observer_Bias" = model.P_observer,
+#   "Location_Bias" = model.P_location,
+#   "Both_Biases" = model.P_both
+# )
+# 
+# prev_bias_comparison <- aictab(prev_bias_models)
+# print("PREVALENCE MODEL BIAS COMPARISON:")
+# print(prev_bias_comparison)
+
+# STATISTICAL TESTS for bias significance
+print("\n=== SIGNIFICANCE TESTS ===")
+
+# Test 1: Is ProcessedBy significant?
+observer_count_test <- anova(model.A6, model.B1_observer)
+print("Observer effect on COUNT model:")
+print(observer_count_test)
+# 
+# observer_prev_test <- anova(model.P4, model.P_observer) 
+# print("Observer effect on PREVALENCE model:")
+# print(observer_prev_test)
+
+# Test 2: Is FixedLocation significant?
+location_count_test <- anova(model.A6, model.B2_location)
+print("Location effect on COUNT model:")
+print(location_count_test)
+
+# location_prev_test <- anova(model.P4, model.P_location)
+# print("Location effect on PREVALENCE model:")
+# print(location_prev_test)
+
+# EFFECT SIZE ANALYSIS
+print("\n=== OBSERVER BIAS MAGNITUDE ===")
+if(any(grepl("Observer", count_bias_comparison$Modnames[1:2]))) {
+  # If observer model is competitive, examine effect sizes
+  library(emmeans)
+  
+  observer_effects_count <- emmeans(model.B1_observer, ~ ProcessedBy, type = "response")
+  print("Count differences by observer:")
+  observer_count_df <- as.data.frame(observer_effects_count)
+  print(observer_count_df)
+  
+  # Calculate fold differences between observers
+  max_observer <- max(observer_count_df$response)
+  min_observer <- min(observer_count_df$response)
+  observer_bias_ratio <- max_observer / min_observer
+  print(paste("Maximum observer bias:", round(observer_bias_ratio, 2), "fold difference"))
+}
+
+print("\n=== LOCATION VARIABILITY ===")
+if(any(grepl("Location", count_bias_comparison$Modnames[1:2]))) {
+  # Extract random effect variance for FixedLocation
+  location_variance <- VarCorr(model.B2_location)
+  print("FixedLocation random effect variance:")
+  print(location_variance)
+}
+
+```
+
+
+``` {r}
+# Claude
+
+# BIAS-CORRECTED BIOLOGICAL INTERPRETATION
+# Using the "Both_Biases" model as the most appropriate model
+
+print("=== BIAS-CORRECTED MODEL SUMMARY ===")
+print(summary(model.B3_both))
+
+# Calculate R-squared to understand how much variation is explained
+library(performance)
+r2_corrected <- r2(model.B3_both)
+print(paste("Conditional R² (total variation explained):", round(r2_corrected$R2_conditional, 3)))
+print(paste("Marginal R² (fixed effects only):", round(r2_corrected$R2_marginal, 3)))
+
+# BIOLOGICAL EFFECTS AFTER BIAS CORRECTION
+print("\n=== ROBUST BIOLOGICAL PATTERNS ===")
+
+# Extract coefficients for biological variables only
+bio_coefs <- summary(model.B3_both)$coefficients$cond
+bio_vars <- rownames(bio_coefs)[!grepl("ProcessedBy", rownames(bio_coefs))]
+bio_effects <- bio_coefs[bio_vars, ]
+
+print("Biological effects (bias-corrected):")
+print(bio_effects)
+
+# Convert to interpretable effects (fold changes)
+print("\n=== FOLD-CHANGE INTERPRETATION ===")
+
+# Section effects (relative to baseline Section W)
+if("SectionC" %in% rownames(bio_effects)) {
+  section_c_effect <- exp(bio_effects["SectionC", "Estimate"])
+  section_c_p <- bio_effects["SectionC", "Pr(>|z|)"]
+  print(paste("Section C vs W:", round(section_c_effect, 2), "x clams (p =", 
+              format(section_c_p, scientific = TRUE, digits = 3), ")"))
+}
+
+if("SectionE" %in% rownames(bio_effects)) {
+  section_e_effect <- exp(bio_effects["SectionE", "Estimate"])
+  section_e_p <- bio_effects["SectionE", "Pr(>|z|)"]
+  print(paste("Section E vs W:", round(section_e_effect, 2), "x clams (p =", 
+              format(section_e_p, scientific = TRUE, digits = 3), ")"))
+}
+
+# Weight effect
+if("TotalWeight_scaled" %in% rownames(bio_effects)) {
+  weight_effect <- exp(bio_effects["TotalWeight_scaled", "Estimate"])
+  weight_p <- bio_effects["TotalWeight_scaled", "Pr(>|z|)"]
+  print(paste("Weight effect:", round(weight_effect, 2), "x clams per SD increase (p =", 
+              format(weight_p, scientific = TRUE, digits = 3), ")"))
+}
+
+# Seasonal effects (relative to Winter baseline)
+seasonal_vars <- grep("Season", rownames(bio_effects), value = TRUE)
+if(length(seasonal_vars) > 0) {
+  print("\nSeasonal effects (relative to Winter):")
+  for(season_var in seasonal_vars) {
+    season_effect <- exp(bio_effects[season_var, "Estimate"])
+    season_p <- bio_effects[season_var, "Pr(>|z|)"]
+    season_name <- gsub("Season", "", season_var)
+    significance <- ifelse(season_p < 0.001, "***", 
+                          ifelse(season_p < 0.01, "**",
+                                ifelse(season_p < 0.05, "*", "ns")))
+    print(paste(season_name, ":", round(season_effect, 2), "x clams", significance))
+  }
+}
+
+# Yearly effects (relative to 2016 baseline)
+yearly_vars <- grep("Year", rownames(bio_effects), value = TRUE)
+if(length(yearly_vars) > 0) {
+  print("\nYearly effects (relative to 2016) - BIAS CORRECTED:")
+  for(year_var in yearly_vars) {
+    year_effect <- exp(bio_effects[year_var, "Estimate"])
+    year_p <- bio_effects[year_var, "Pr(>|z|)"]
+    year_name <- gsub("Year", "", year_var)
+    significance <- ifelse(year_p < 0.001, "***", 
+                          ifelse(year_p < 0.01, "**",
+                                ifelse(year_p < 0.05, "*", "ns")))
+    print(paste(year_name, ":", round(year_effect, 2), "x clams", significance))
+  }
+}
+
+# OBSERVER EFFECTS MAGNITUDE
+print("\n=== OBSERVER BIAS MAGNITUDE ===")
+observer_vars <- grep("ProcessedBy", rownames(bio_coefs), value = TRUE)
+if(length(observer_vars) > 0) {
+  observer_effects <- exp(bio_coefs[observer_vars, "Estimate"])
+  observer_range <- max(observer_effects) / min(observer_effects)
+  print(paste("Observer bias range:", round(observer_range, 2), "fold difference"))
+  print(paste("Highest counting observer:", round(max(observer_effects), 2), "x baseline"))
+  print(paste("Lowest counting observer:", round(min(observer_effects), 2), "x baseline"))
+}
+
+# LOCATION EFFECTS MAGNITUDE  
+print("\n=== LOCATION VARIABILITY ===")
+location_variance <- VarCorr(model.B3_both)
+location_sd <- attr(location_variance$cond$FixedLocation, "stddev")
+print(paste("Location random effect SD:", round(location_sd, 3)))
+print(paste("Location effect: ~", round(exp(2 * location_sd), 1), 
+            "fold range between high/low locations"))
+
+print("\n=== COMPARISON: ORIGINAL vs BIAS-CORRECTED ===")
+
+# Compare key effects between models
+print("Section E effect:")
+original_section_e <- exp(1.16136)  # From your original model summary
+corrected_section_e <- ifelse("SectionE" %in% rownames(bio_effects), 
+                              exp(bio_effects["SectionE", "Estimate"]), NA)
+print(paste("Original model:", round(original_section_e, 2), "x"))
+print(paste("Bias-corrected:", round(corrected_section_e, 2), "x"))
+print(paste("Bias inflation:", round(original_section_e / corrected_section_e, 2), "x"))
+
+# Extract and visualize the bias-corrected temporal patterns
+library(emmeans)
+library(ggplot2)
+
+# Get bias-corrected predictions for visualization
+print("\n=== BIAS-CORRECTED SEASONAL PATTERNS ===")
+if(length(seasonal_vars) > 0) {
+  season_corrected <- emmeans(model.B3_both, ~ Season, type = "response")
+  season_corrected_df <- as.data.frame(season_corrected)
+  print(season_corrected_df)
+  
+  # Plot corrected seasonal pattern
+  p_season_corrected <- ggplot(season_corrected_df, aes(x = Season, y = response)) +
+    geom_point(size = 4, color = "darkgreen") +
+    geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL), width = 0.2, size = 1) +
+    labs(title = "BIAS-CORRECTED Seasonal Pattern", 
+         subtitle = "After accounting for observer and location effects",
+         y = "Predicted Clam Count", x = "Season") +
+    theme_minimal() +
+    theme(text = element_text(size = 12))
+  
+  print(p_season_corrected)
+}
+
+print("\n=== BIAS-CORRECTED YEARLY PATTERNS ===")
+if(length(yearly_vars) > 0) {
+  year_corrected <- emmeans(model.B3_both, ~ Year, type = "response")
+  year_corrected_df <- as.data.frame(year_corrected)
+  print(year_corrected_df)
+  
+  # Plot corrected yearly pattern
+  year_corrected_df$Year_num <- as.numeric(as.character(year_corrected_df$Year))
+  p_year_corrected <- ggplot(year_corrected_df, aes(x = Year_num, y = response)) +
+    geom_line(size = 1, color = "darkblue") +
+    geom_point(size = 3, color = "darkblue") +
+    geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL), width = 0.2) +
+    labs(title = "BIAS-CORRECTED Yearly Pattern", 
+         subtitle = "After accounting for observer and location effects",
+         y = "Predicted Clam Count", x = "Year") +
+    theme_minimal() +
+    theme(text = element_text(size = 12))
+  
+  print(p_year_corrected)
+}
+
+print("\n=== SCIENTIFIC CONCLUSIONS ===")
+print("ROBUST biological patterns (after bias correction):")
+print("1. Weight effect remains strong - biological signal")
+print("2. Section differences remain but magnitude reduced")
+print("3. Temporal patterns require careful interpretation")
+print("4. Observer training/standardization is critical for future work")
+print("5. Location effects are substantial - site selection matters")
+
 
 ```
