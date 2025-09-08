@@ -25,7 +25,6 @@ library(openxlsx)
 library(car)
 
 #chatGPT
-library(ggplot2)
 library(effsize)
 library(lsr)
 library(gridExtra)
@@ -178,6 +177,9 @@ Season.colors <- c("Winter"="#FFBBBB",
                "Summer"="#CC79A7",
                "Fall"="#0067A0")
 
+# Remove unnecessary dataframes
+rm(hsdbConditionIndex, hsdbShellPest, ShellPest, ShellPest1)
+
 ```
 
 ``` {r Initial GLMM Models}
@@ -203,7 +205,7 @@ model.TW <- glmmTMB(TotalClamCount ~ TotalWeight_scaled,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
-##### Section AND ShellHeight as a fixed effect 
+##### ShellHeight ONLY as a fixed effect 
 model.SH <- glmmTMB(TotalClamCount ~ ShellHeight_scaled,
                    ziformula = ~1,
                    family = nbinom2(link = "log"),
@@ -221,17 +223,25 @@ model.S.SH <- glmmTMB(TotalClamCount ~ Section + ShellHeight_scaled,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
+##### TotalWeight AND ShellHeight as a fixed effect 
+model.TW.SH <- glmmTMB(TotalClamCount ~ TotalWeight_scaled + ShellHeight_scaled,
+                   ziformula = ~1,
+                   family = nbinom2(link = "log"),
+                   data = ShellPest2)
+
 ### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
 model.names1 <- c('SectionOnly', 
                  'TotalWeightOnly', 
                  'ShellHeightOnly', 
                  'Section+TotalWeight', 
-                 'Section+SH')
+                 'Section+SH',
+                 'TotalWeight+SH')
 aictab(list(model.S, 
             model.TW, 
             model.SH, 
             model.S.TW, 
-            model.S.SH), 
+            model.S.SH,
+            model.TW.SH), 
        modnames = model.names1) #will use one for analysis
 
 ######### Since Section&TotalWeight has a Massively better AICc, only it will be tested here
@@ -247,17 +257,20 @@ r2(best_model1)
 ##### Look at estimates
 summary(best_model1)
 
+# Remove unnecesssary models
+rm(model.S, model.S.SH, model.S.TW, model.SH, model.TW, model.TW.SH)
+
 ```
 
 ``` {r Improving Basic GLMM Models}
 # Extended model set: Adding Season and Year systematically
 
 ##### Baseline - Best model from above
-# Section AND TotalWeight as a fixed effect 
-model.S.TW <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled,
-                   ziformula = ~1,
-                   family = nbinom2(link = "log"),
-                   data = ShellPest2)
+### Section AND TotalWeight as a fixed effect 
+# model.S.TW <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled,
+#                    ziformula = ~1,
+#                    family = nbinom2(link = "log"),
+#                    data = ShellPest2)
 
 # Add Season (cyclical pattern)
 # Section AND TotalWeight AND Season as a fixed effect 
@@ -310,7 +323,7 @@ model.names2 <- c('1-SectionWeight (Base)',
                  '6-SectionWeight+Season+YearScaled',
                  '7-SectionWeight+Season * YearScaled'
                  )
-aictab(list(model.S.TW, 
+aictab(list(bestmodel1, 
             model.S.TW.Ss, 
             model.S.TW.Y, 
             model.S.TW.Y_s, 
@@ -343,66 +356,12 @@ print("2. Non-linear year effects are crucial (5 >> 6: factor vs linear year)")
 print("3. Seasonal patterns are consistent across years (5 >> 7: no interaction needed)")
 print("4. Temporal factors explain MASSIVE variation (ΔAICc = 156 vs baseline)")
 
-```
+# Remove unnecessary models
 
-``` {r Seasonal & Yearly Patterns}
-# Analyze seasonal and yearly patterns in detail
-
-# 1. SEASONAL PATTERNS
-print("=== SEASONAL PATTERNS ===")
-season_emm <- emmeans(best_model2, ~ Season, type = "response")
-season_results <- as.data.frame(season_emm) %>%
-  rename(lower_col = asymp.LCL,
-         upper_col = asymp.UCL)
-print(season_results)
-
-# Plot seasonal effects
-
-season_pattern <- ggplot(season_results, aes(x = Season, y = response)) +
-  geom_point(size = 4, color = "steelblue") +
-  geom_errorbar(aes(ymin = lower_col, ymax = upper_col), width = 0.2, linewidth = 1) +
-  labs(title = "Seasonal Pattern in Clam Counts", 
-       subtitle = "Estimated marginal means ± 95% CI",
-       y = "Predicted Clam Count", x = "Season") +
-  theme_minimal() +
-  theme(text = element_text(size = 12))
-
-print(season_pattern)
-
-# Calculate seasonal fold-differences
-max_season <- season_results[which.max(season_results$response), ]
-min_season <- season_results[which.min(season_results$response), ]
-seasonal_ratio <- max_season$response / min_season$response
-print(paste("Peak season (", max_season$Season, ") has", round(seasonal_ratio, 2), 
-            "times more clams than lowest season (", min_season$Season, ")"))
-
-
-# 2. YEARLY PATTERNS  
-print("=== YEARLY PATTERNS ===")
-year_emm <- emmeans(best_model2, ~ Year, type = "response")
-year_results <- as.data.frame(year_emm) 
-print(year_results)
-
-year_pattern <- ggplot(year_results, aes(x = Year, y = response)) +
-  geom_line(size = 1, color = "darkred") +
-  geom_point(size = 3, color = "darkred") +
-  geom_errorbar(aes_string(ymin = lower_col, ymax = upper_col), width = 0.2) +
-  labs(title = "Year-to-Year Variation in Clam Counts", 
-       subtitle = "Non-linear temporal trend",
-       y = "Predicted Clam Count", x = "Year") +
-  theme_minimal() +
-  theme(text = element_text(size = 12))
-
-print(year_pattern)
-
-# Calculate yearly variation
-max_year <- year_results[which.max(year_results$response), ]
-min_year <- year_results[which.min(year_results$response), ]
-yearly_ratio <- max_year$response / min_year$response
-print(paste("Highest year (", max_year$Year, ") had", round(yearly_ratio, 2), 
-            "times more clams than least year (", min_year$Year, ")"))
+rm(model.S.TW.Ss, model.S.TW.Y, model.S.TW.Y_s, model.S.TW.Ss.Y, model.S.TW.Ss.Y_s, model.S.TW.Ss.X.Y_s)
 
 ```
+
 
 ``` {r Prevalence Initial GLMM Models}
 
@@ -911,7 +870,74 @@ importance_results
 
 ```
 
+
+``` {r Seasonal & Yearly Patterns}
+# The following code is only needed if there is not significant bias found above
+
+stop()
+
+# Analyze seasonal and yearly patterns in detail
+
+# 1. SEASONAL PATTERNS
+print("=== SEASONAL PATTERNS ===")
+season_emm <- emmeans(best_model2, ~ Season, type = "response")
+season_results <- as.data.frame(season_emm) %>%
+  rename(lower_col = asymp.LCL,
+         upper_col = asymp.UCL)
+print(season_results)
+
+# Plot seasonal effects
+
+season_pattern <- ggplot(season_results, aes(x = Season, y = response)) +
+  geom_point(size = 4, color = "steelblue") +
+  geom_errorbar(aes(ymin = lower_col, ymax = upper_col), width = 0.2, linewidth = 1) +
+  labs(title = "Seasonal Pattern in Clam Counts", 
+       subtitle = "Estimated marginal means ± 95% CI",
+       y = "Predicted Clam Count", x = "Season") +
+  theme_minimal() +
+  theme(text = element_text(size = 12))
+
+print(season_pattern)
+
+# Calculate seasonal fold-differences
+max_season <- season_results[which.max(season_results$response), ]
+min_season <- season_results[which.min(season_results$response), ]
+seasonal_ratio <- max_season$response / min_season$response
+print(paste("Peak season (", max_season$Season, ") has", round(seasonal_ratio, 2), 
+            "times more clams than lowest season (", min_season$Season, ")"))
+
+
+# 2. YEARLY PATTERNS  
+print("=== YEARLY PATTERNS ===")
+year_emm <- emmeans(best_model2, ~ Year, type = "response")
+year_results <- as.data.frame(year_emm) 
+print(year_results)
+
+year_pattern <- ggplot(year_results, aes(x = Year, y = response)) +
+  geom_line(size = 1, color = "darkred") +
+  geom_point(size = 3, color = "darkred") +
+  geom_errorbar(aes_string(ymin = lower_col, ymax = upper_col), width = 0.2) +
+  labs(title = "Year-to-Year Variation in Clam Counts", 
+       subtitle = "Non-linear temporal trend",
+       y = "Predicted Clam Count", x = "Year") +
+  theme_minimal() +
+  theme(text = element_text(size = 12))
+
+print(year_pattern)
+
+# Calculate yearly variation
+max_year <- year_results[which.max(year_results$response), ]
+min_year <- year_results[which.min(year_results$response), ]
+yearly_ratio <- max_year$response / min_year$response
+print(paste("Highest year (", max_year$Year, ") had", round(yearly_ratio, 2), 
+            "times more clams than least year (", min_year$Year, ")"))
+
+```
+
+
 ``` {r Bias-Corrected Results}
+# The following code is only needed if there is not significant bias found above
+
 # BIAS-CORRECTED BIOLOGICAL INTERPRETATION
 # Using the "Both_Biases" model as the most appropriate model
 
