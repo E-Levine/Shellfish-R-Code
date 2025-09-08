@@ -158,25 +158,6 @@ ShellPest2 <- ShellPest1 %>% # getting everything that needs to be scaled
 # Create binary infection status (0 = uninfected, 1 = infected)
 ShellPest2$Infected <- ifelse(ShellPest2$TotalClamCount > 0, 1, 0)
 
-# separate by year
-year_breaks <- seq(as.Date("2016-01-01"), as.Date("2022-01-01"), by = "years")
-year_labels <- format(year_breaks, "%Y")
-
-# Assign CB friendly colors to sections and years
-Section.colors <- c("W" = "#00a884", 
-                    "C" = "#FF7979", 
-                    "E" = "#6D9DFF")
-yr.colors <- c("2016"="#FFBBBB",
-               "2017"="#56B4E9",
-               "2018"="#CC79A7",
-               "2019"="#0067A0",
-               "2021"="#58FF7E",
-               "2022"="#FF6666")
-Season.colors <- c("Winter"="#FFBBBB",
-               "Spring"="#56B4E9",
-               "Summer"="#CC79A7",
-               "Fall"="#0067A0")
-
 # Remove unnecessary dataframes
 rm(hsdbConditionIndex, hsdbShellPest, ShellPest, ShellPest1)
 
@@ -193,56 +174,52 @@ rm(hsdbConditionIndex, hsdbShellPest, ShellPest, ShellPest1)
 #   optCtrl = list(eval.max = 1000, iter.max = 1000)
 # )
 
-##### Section ONLY as a fixed effect
+##### 1-Section ONLY as a fixed effect
 model.S <- glmmTMB(TotalClamCount ~ Section,
                    ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
-##### TotalWeight ONLY as a fixed effect 
+##### 2-TotalWeight ONLY as a fixed effect 
 model.TW <- glmmTMB(TotalClamCount ~ TotalWeight_scaled,
                    ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
-##### ShellHeight ONLY as a fixed effect 
+##### 3-ShellHeight ONLY as a fixed effect 
 model.SH <- glmmTMB(TotalClamCount ~ ShellHeight_scaled,
                    ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
-##### Section AND TotalWeight as a fixed effect 
+##### 4-Section AND TotalWeight as a fixed effect 
 model.S.TW <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled,
                    ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
-##### Section AND ShellHeight as a fixed effect 
+##### 5-Section AND ShellHeight as a fixed effect 
 model.S.SH <- glmmTMB(TotalClamCount ~ Section + ShellHeight_scaled,
                    ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
-##### TotalWeight AND ShellHeight as a fixed effect 
+##### 6-TotalWeight AND ShellHeight as a fixed effect 
 model.TW.SH <- glmmTMB(TotalClamCount ~ TotalWeight_scaled + ShellHeight_scaled,
                    ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
 ### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
-model.names1 <- c('SectionOnly', 
-                 'TotalWeightOnly', 
-                 'ShellHeightOnly', 
-                 'Section+TotalWeight', 
-                 'Section+SH',
-                 'TotalWeight+SH')
-aictab(list(model.S, 
-            model.TW, 
-            model.SH, 
-            model.S.TW, 
-            model.S.SH,
-            model.TW.SH), 
-       modnames = model.names1) #will use one for analysis
+Count_models1 <- list(
+  '1-SectionOnly' = model.S,
+  '2-TotalWeightOnly' = model.TW, 
+  '3-ShellHeightOnly' = model.SH, 
+  '4-Section+TotalWeight' = model.S.TW, 
+  '5-Section+SH' = model.S.SH,
+  '6-TotalWeight+SH' = model.TW.SH)
+
+aictab(Count_models1) #will use one for analysis
 
 ######### Since Section&TotalWeight has a Massively better AICc, only it will be tested here
 best_model1 <- model.S.TW
@@ -265,49 +242,49 @@ rm(model.S, model.S.SH, model.S.TW, model.SH, model.TW, model.TW.SH)
 ``` {r Improving Basic GLMM Models}
 # Extended model set: Adding Season and Year systematically
 
-##### Baseline - Best model from above
+##### 1-Baseline - Best model from above
 ### Section AND TotalWeight as a fixed effect 
 # model.S.TW <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled,
 #                    ziformula = ~1,
 #                    family = nbinom2(link = "log"),
 #                    data = ShellPest2)
 
-# Add Season (cyclical pattern)
+# 2-Add Season (cyclical pattern)
 # Section AND TotalWeight AND Season as a fixed effect 
 model.S.TW.Ss <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season,
                    ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
-# Add Year as a factor (non-linear temporal trend)
+# 3-Add Year as a factor (non-linear temporal trend)
 # Section AND TotalWeight AND Year as a fixed effect 
 model.S.TW.Y <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Year,
                    ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
-# Add Year as a linear trend (more parsimonious)
+# 4-Add Year as a linear trend (more parsimonious)
 # Section AND TotalWeight AND Year_scaled as a fixed effect 
 model.S.TW.Y_s <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Year_scaled,
                    ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
-# Add Season AND Year (factor)
+# 5-Add Season AND Year (factor)
 # Section AND TotalWeight AND Season AND Year as a fixed effect 
 model.S.TW.Ss.Y <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year,
                    ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
-# Add Season AND Year (linear)
+# 6-Add Season AND Year (linear)
 # Section AND TotalWeight AND Season AND Year_Scaled as a fixed effect 
 model.S.TW.Ss.Y_s <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year_scaled,
                    ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
-# Add Season-Year interaction (test if seasonal patterns change over years)
+# 7-Add Season-Year interaction (test if seasonal patterns change over years)
 # Section AND TotalWeight AND Season-Year_scaled interaction as a fixed effect 
 model.S.TW.Ss.X.Y_s <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season * Year_scaled,
                    ziformula = ~1,
@@ -315,22 +292,15 @@ model.S.TW.Ss.X.Y_s <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + S
                    data = ShellPest2)
 
 ### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
-model.names2 <- c('1-SectionWeight (Base)', 
-                 '2-SectionWeight+Season', 
-                 '3-SectionWeight+Year', 
-                 '4-SectionWeight+YearScaled', 
-                 '5-SectionWeight+Season+Year',
-                 '6-SectionWeight+Season+YearScaled',
-                 '7-SectionWeight+Season * YearScaled'
-                 )
-aictab(list(bestmodel1, 
-            model.S.TW.Ss, 
-            model.S.TW.Y, 
-            model.S.TW.Y_s, 
-            model.S.TW.Ss.Y,
-            model.S.TW.Ss.Y_s,
-            model.S.TW.Ss.X.Y_s), 
-       modnames = model.names2) #will use one for analysis
+Count_models2 <- list('1-Section+Weight (Base)' = best_model1, 
+                 '2-Section+Weight+Season' = model.S.TW.Ss, 
+                 '3-Section+Weight+Year' = model.S.TW.Y, 
+                 '4-Section+Weight+YearScaled' = model.S.TW.Y_s, 
+                 '5-Section+Weight+Season+Year' = model.S.TW.Ss.Y,
+                 '6-Section+Weight+Season+YearScaled' = model.S.TW.Ss.Y_s,
+                 '7-Section+Weight+Season*YearScaled' = model.S.TW.Ss.X.Y_s)                 )
+
+aictab(Count_models2) #will use one for analysis
 
 ######### Since SectionWeight+Season+Year has a significantly better AICc, only it will be tested here
 best_model2 <- model.S.TW.Ss.Y
@@ -362,7 +332,6 @@ rm(model.S.TW.Ss, model.S.TW.Y, model.S.TW.Y_s, model.S.TW.Ss.Y, model.S.TW.Ss.Y
 
 ```
 
-
 ``` {r Prevalence Initial GLMM Models}
 
 # Additional optimization options if convergence issues occur:
@@ -374,53 +343,57 @@ rm(model.S.TW.Ss, model.S.TW.Y, model.S.TW.Y_s, model.S.TW.Ss.Y, model.S.TW.Ss.Y
 #   optCtrl = list(eval.max = 1000, iter.max = 1000)
 # )
 
-##### Section ONLY as a fixed effect
+##### 1-Section ONLY as a fixed effect
 P.model.S <- glmmTMB(Infected ~ Section,
                    family = binomial,
                    data = ShellPest2,
                    control = glmmTMBControl(optimizer = optim, 
                                           optArgs = list(method = "BFGS")))
 
-##### TotalWeight ONLY as a fixed effect 
+##### 2-TotalWeight ONLY as a fixed effect 
 P.model.TW <- glmmTMB(Infected ~ TotalWeight_scaled,
                    family = binomial,
                    data = ShellPest2,
                    control = glmmTMBControl(optimizer = optim, 
                                           optArgs = list(method = "BFGS")))
 
-##### Section AND ShellHeight as a fixed effect 
+##### 3-Section AND ShellHeight as a fixed effect 
 P.model.SH <- glmmTMB(Infected ~ ShellHeight_scaled,
                    family = binomial,
                    data = ShellPest2,
                    control = glmmTMBControl(optimizer = optim, 
                                           optArgs = list(method = "BFGS")))
 
-##### Section AND TotalWeight as a fixed effect 
+##### 4-Section AND TotalWeight as a fixed effect 
 P.model.S.TW <- glmmTMB(Infected ~ Section + TotalWeight_scaled,
                    family = binomial,
                    data = ShellPest2,
                    control = glmmTMBControl(optimizer = optim, 
                                           optArgs = list(method = "BFGS")))
 
-##### Section AND ShellHeight as a fixed effect 
+##### 5-Section AND ShellHeight as a fixed effect 
 P.model.S.SH <- glmmTMB(Infected ~ Section + ShellHeight_scaled,
                    family = binomial,
                    data = ShellPest2,
                    control = glmmTMBControl(optimizer = optim, 
                                           optArgs = list(method = "BFGS")))
 
+##### 6-TotalWeight AND ShellHeight as a fixed effect 
+P.model.TW.SH <- glmmTMB(Infected ~ TotalWeight_scaled + ShellHeight_scaled,
+                   family = binomial,
+                   data = ShellPest2,
+                   control = glmmTMBControl(optimizer = optim, 
+                                          optArgs = list(method = "BFGS")))
+
 ### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
-P.model.names1 <- c('1-SectionOnly', 
-                 '2-TotalWeightOnly', 
-                 '3-ShellHeightOnly', 
-                 '4-Section+TotalWeight', 
-                 '5-Section+SH')
-aictab(list(P.model.S, 
-            P.model.TW, 
-            P.model.SH, 
-            P.model.S.TW, 
-            P.model.S.SH), 
-       modnames = P.model.names1) #will use one for analysis
+Prevalence_models1 <- list('1-SectionOnly' = P.model.S, 
+                 '2-TotalWeightOnly' = P.model.TW, 
+                 '3-ShellHeightOnly' = P.model.SH, 
+                 '4-Section+TotalWeight' = P.model.S.TW, 
+                 '5-Section+SH' = P.model.S.SH,
+                 '6-TotalWeight+SH' = P.model.TW.SH)
+
+aictab(Prevalence_models1) #will use one for analysis
 
 ######### Since Section&TotalWeight has a Massively better AICc, only it will be tested here
 P.best_model1 <- P.model.S.TW
@@ -435,20 +408,23 @@ r2(P.best_model1)
 ##### Look at estimates
 summary(P.best_model1)
 
+# Remove unnecessay models
+rm(P.model.S, P.model.TW, P.model.SH, P.model.S.TW, P.model.S.SH, P.model.TW.SH)
+
 ```
 
 ``` {r Prevalence Improving Basic GLMM Models}
 # Extended model set: Adding Season and Year systematically
 
-##### Baseline - Best model from above
-# Section AND TotalWeight as a fixed effect 
-P.model.S.TW <- glmmTMB(Infected ~ Section + TotalWeight_scaled,
-                   family = binomial,
-                   data = ShellPest2,
-                   control = glmmTMBControl(optimizer = optim, 
-                                          optArgs = list(method = "BFGS")))
+##### 1-Baseline - Best model from above
+## Section AND TotalWeight as a fixed effect 
+# P.model.S.TW <- glmmTMB(Infected ~ Section + TotalWeight_scaled,
+#                    family = binomial,
+#                    data = ShellPest2,
+#                    control = glmmTMBControl(optimizer = optim, 
+#                                           optArgs = list(method = "BFGS")))
 
-# Add Season (cyclical pattern)
+# 2-Add Season (cyclical pattern)
 # Section AND TotalWeight AND Season as a fixed effect 
 P.model.S.TW.Ss <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season,
                    family = binomial,
@@ -456,7 +432,7 @@ P.model.S.TW.Ss <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season,
                    control = glmmTMBControl(optimizer = optim, 
                                           optArgs = list(method = "BFGS")))
 
-# Add Year as a factor (non-linear temporal trend)
+# 3-Add Year as a factor (non-linear temporal trend)
 # Section AND TotalWeight AND Year as a fixed effect 
 P.model.S.TW.Y <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Year,
                    family = binomial,
@@ -464,7 +440,7 @@ P.model.S.TW.Y <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Year,
                    control = glmmTMBControl(optimizer = optim, 
                                           optArgs = list(method = "BFGS")))
 
-# Add Year as a linear trend (more parsimonious)
+# 4-Add Year as a linear trend (more parsimonious)
 # Section AND TotalWeight AND Year_scaled as a fixed effect 
 P.model.S.TW.Y_s <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Year_scaled,
                    family = binomial,
@@ -472,7 +448,7 @@ P.model.S.TW.Y_s <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Year_scale
                    control = glmmTMBControl(optimizer = optim, 
                                           optArgs = list(method = "BFGS")))
 
-# Add Season AND Year (factor)
+# 5-Add Season AND Year (factor)
 # Section AND TotalWeight AND Season AND Year as a fixed effect 
 P.model.S.TW.Ss.Y <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + Year,
                    family = binomial,
@@ -480,7 +456,7 @@ P.model.S.TW.Ss.Y <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + 
                    control = glmmTMBControl(optimizer = optim, 
                                           optArgs = list(method = "BFGS")))
 
-# Add Season AND Year (linear)
+# 6-Add Season AND Year (linear)
 # Section AND TotalWeight AND Season AND Year_Scaled as a fixed effect 
 P.model.S.TW.Ss.Y_s <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + Year_scaled,
                    family = binomial,
@@ -489,7 +465,7 @@ P.model.S.TW.Ss.Y_s <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season 
                                           optArgs = list(method = "BFGS")))
 
 
-# Add Season-Year interaction (test if seasonal patterns change over years)
+# 7-Add Season-Year interaction (test if seasonal patterns change over years)
 # Section AND TotalWeight AND Season-Year_scaled interaction as a fixed effect 
 P.model.S.TW.Ss.X.Y_s <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season * Year_scaled,
                    family = binomial,
@@ -498,22 +474,15 @@ P.model.S.TW.Ss.X.Y_s <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Seaso
                                           optArgs = list(method = "BFGS")))
 
 ### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
-P.model.names2 <- c('1-SectionWeight (Base)', 
-                 '2-SectionWeight+Season', 
-                 '3-SectionWeight+Year', 
-                 '4-SectionWeight+YearScaled', 
-                 '5-SectionWeight+Season+Year',
-                 '6-SectionWeight+Season+YearScaled',
-                 '7-SectionWeight+Season * YearScaled'
-                 )
-aictab(list(P.model.S.TW, 
-            P.model.S.TW.Ss, 
-            P.model.S.TW.Y, 
-            P.model.S.TW.Y_s, 
-            P.model.S.TW.Ss.Y,
-            P.model.S.TW.Ss.Y_s,
-            P.model.S.TW.Ss.X.Y_s), 
-       modnames = P.model.names2) #will use one for analysis
+Prevalence_models2 <- list('1-SectionWeight (Base)' = P.best_model1, 
+                 '2-SectionWeight+Season' = P.model.S.TW.Ss, 
+                 '3-SectionWeight+Year' = P.model.S.TW.Y, 
+                 '4-SectionWeight+YearScaled' = P.model.S.TW.Y_s, 
+                 '5-SectionWeight+Season+Year' = P.model.S.TW.Ss.Y,
+                 '6-SectionWeight+Season+YearScaled' = P.model.S.TW.Ss.Y_s,
+                 '7-SectionWeight+Season * YearScaled' = P.model.S.TW.Ss.X.Y_s)
+
+aictab(Prevalence_models2) #will use one for analysis
 
 ######### Since SectionWeight+Season+Year has a significantly better AICc, only it will be tested here
 P.best_model2 <- P.model.S.TW.Ss.Y
@@ -540,89 +509,8 @@ print("3. Seasonal patterns are consistent across years (5 >> 7: no interaction 
 print("4. Temporal factors explain MASSIVE variation (ΔAICc = 111 vs baseline)")
 print("5. Tjur's R 0.202 indicates the best model has a moderate, but not strong ability to distinguish between the two outcomes")
 
-```
-
-``` {r Prevalence Seasonal & Yearly Patterns}
-# Analyze prevalence seasonal and yearly patterns in detail
-
-# 1. SEASONAL PATTERNS
-print("=== PREVALENCE SEASONAL PATTERNS ===")
-P.season_emm <- emmeans(P.best_model2, ~ Season, type = "response")
-P.season_results <- as.data.frame(P.season_emm) %>%
-  rename(lower_col = asymp.LCL,
-         upper_col = asymp.UCL)
-print(P.season_results)
-
-# Plot seasonal effects
-
-P.season_pattern <- ggplot(P.season_results, aes(x = Season, y = prob)) +
-  geom_point(size = 4, color = "steelblue") +
-  geom_errorbar(aes(ymin = lower_col, ymax = upper_col), width = 0.2, linewidth = 1) +
-  labs(title = "Prevalence Seasonal Pattern in Clam Counts", 
-       subtitle = "Estimated marginal means ± 95% CI",
-       y = "Prevalence of Clam", x = "Season") +
-  theme_minimal() +
-  theme(text = element_text(size = 12))
-
-print(P.season_pattern)
-
-# Calculate seasonal fold-differences
-P.max_season <- P.season_results[which.max(P.season_results$prob), ]
-P.min_season <- P.season_results[which.min(P.season_results$prob), ]
-P.seasonal_ratio <- P.max_season$prob / P.min_season$prob
-print(paste("Peak season (", P.max_season$Season, ") has", round(P.seasonal_ratio, 2), 
-            "higher prevalence of clams than lowest season (", P.min_season$Season, ")"))
-
-
-# 2. YEARLY PATTERNS  
-print("=== PREVALENCE YEARLY PATTERNS ===")
-P.year_emm <- emmeans(P.best_model2, ~ Year, type = "response")
-P.year_results <- as.data.frame(P.year_emm) 
-print(P.year_results)
-
-P.year_pattern <- ggplot(P.year_results, aes(x = Year, y = prob)) +
-  geom_line(size = 1, color = "darkred") +
-  geom_point(size = 3, color = "darkred") +
-  geom_errorbar(aes_string(ymin = lower_col, ymax = upper_col), width = 0.2) +
-  labs(title = "Year-to-Year Variation in Clam Prevalence", 
-       subtitle = "Non-linear temporal trend",
-       y = "Predicted Clam Prevalence", x = "Year") +
-  theme_minimal() +
-  theme(text = element_text(size = 12))
-
-print(P.year_pattern)
-
-# Calculate yearly variation
-P.max_year <- P.year_results[which.max(P.year_results$emmean), ]
-P.min_year <- P.year_results[which.min(P.year_results$emmean), ]
-P.yearly_ratio <- P.max_year$emmean / P.min_year$emmean
-print(paste("Highest year (", P.max_year$Year, ") had", round(P.yearly_ratio, 2), 
-            "times more clams than least year (", P.min_year$Year, ")"))
-
-# 3. PREVALENCE SECTION PATTERNS  
-print("=== PREVALENCE SECTION PATTERNS ===")
-P.section_emm <- emmeans(P.best_model2, ~ Section, type = "response")
-P.section_results <- as.data.frame(P.section_emm) 
-print(P.section_results)
-
-P.section_pattern <- ggplot(P.section_results, aes(x = Section, y = prob)) +
-  geom_line(size = 1, color = "darkred") +
-  geom_point(size = 3, color = "darkred") +
-  geom_errorbar(aes_string(ymin = lower_col, ymax = upper_col), width = 0.2) +
-  labs(title = "section-to-section Variation in Clam Prevalence", 
-       subtitle = "Non-linear temporal trend",
-       y = "Predicted Clam Prevalence", x = "section") +
-  theme_minimal() +
-  theme(text = element_text(size = 12))
-
-print(P.section_pattern)
-
-# Calculate sectionly variation
-P.max_section <- P.section_results[which.max(P.section_results$prob), ]
-P.min_section <- P.section_results[which.min(P.section_results$prob), ]
-P.sectionly_ratio <- (P.max_section$prob - P.min_section$prob) * 100
-print(paste("Highest section (", P.max_section$Section, ") had", round(P.sectionly_ratio, 2), 
-            "% higher prevalence than least section (", P.min_section$Section, ")"))
+# Remove unnecessary models
+rm(P.model.S.TW.Ss, P.model.S.TW.Y, P.model.S.TW.Y_s, P.model.S.TW.Ss.Y, P.model.S.TW.Ss.Y_s, P.model.S.TW.Ss.X.Y_s)
 
 ```
 
@@ -646,7 +534,7 @@ print(location_year[1:min(10, nrow(location_year)), ])  # Show first 10 location
 # BIAS TESTING MODELS
 # OBSERVER BIAS TESTING 
 # Test 1: Add ProcessedBy to count model
-model.B1_observer <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year + ProcessedBy,
+model.B_observer <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year + ProcessedBy,
                             ziformula = ~ 1,
                             family = nbinom2(link = "log"),
                             data = ShellPest2)
@@ -660,7 +548,7 @@ model.P_observer <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + Y
 
 # LOCATION BIAS TESTING
 # Test 3: Add FixedLocation as random effect (nested within Section) to count model
-model.B2_location <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year + (1|FixedLocation),
+model.B_location <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year + (1|FixedLocation),
                             ziformula = ~ 1,
                             family = nbinom2(link = "log"),
                             data = ShellPest2)
@@ -674,7 +562,7 @@ model.P_location <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + Y
 
 # COMBINED BIAS TESTING 
 # Test 5: Both observer and location effects on counts
-model.B3_both <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year + ProcessedBy + (1|FixedLocation),
+model.B_both <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year + ProcessedBy + (1|FixedLocation),
                         ziformula = ~ 1,
                         family = nbinom2(link = "log"),
                         data = ShellPest2)
@@ -685,33 +573,6 @@ model.P_both <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + Year 
                        data = ShellPest2,
                        control = glmmTMBControl(optimizer = optim,
                                               optArgs = list(method = "BFGS")))
-
-
-##### Assess goodness-of-fit (counts)
-simulateResiduals(model.B3_both, n = 175, refit = FALSE, plot = TRUE)
-
-# Check for temporal autocorrelation since we have time series data
-acf(residuals(model.B3_both, type = "pearson"))
-# The residuals exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies. 
-
-# Calculate R-squared equivalent for count models. Closer to 1 is better
-r2(model.B3_both)
-
-##### Look at estimates
-summary(model.B3_both)
-
-##### Assess goodness-of-fit (prevalence)
-simulateResiduals(model.P_both, n = 175, refit = FALSE, plot = TRUE)
-
-# Check for temporal autocorrelation since we have time series data
-acf(residuals(model.P_both, type = "pearson"))
-# The residuals exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies. 
-
-# Calculate R-squared equivalent for prevalence models. Closer to 0 is better
-r2(model.P_both)
-
-##### Look at estimates
-summary(model.P_both)
 
 
 # MODEL COMPARISON: Original vs Bias-corrected models
@@ -729,7 +590,7 @@ print(count_bias_comparison)
 
 # For PREVALENCE models
 prev_bias_models <- list(
-  "Original" = P.best_model2,  # Assuming P4 was your best prevalence model
+  "Original" = P.best_model2,  # Your best prevalence model
   "Observer_Bias" = model.P_observer,
   "Location_Bias" = model.P_location,
   "Both_Biases" = model.P_both
@@ -781,6 +642,40 @@ if(any(grepl("Location", count_bias_comparison$Modnames[1:2]))) {
   print("FixedLocation random effect variance:")
   print(location_variance)
 }
+
+
+
+
+
+
+
+
+##### Assess goodness-of-fit (counts)
+simulateResiduals(model.B_both, n = 175, refit = FALSE, plot = TRUE)
+
+# Check for temporal autocorrelation since we have time series data
+acf(residuals(model.B3_both, type = "pearson"))
+# The residuals exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies. 
+
+# Calculate R-squared equivalent for count models. Closer to 1 is better
+r2(model.B3_both)
+
+##### Look at estimates
+summary(model.B3_both)
+
+##### Assess goodness-of-fit (prevalence)
+simulateResiduals(model.P_both, n = 175, refit = FALSE, plot = TRUE)
+
+# Check for temporal autocorrelation since we have time series data
+acf(residuals(model.P_both, type = "pearson"))
+# The residuals exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies. 
+
+# Calculate R-squared equivalent for prevalence models. Closer to 0 is better
+r2(model.P_both)
+
+##### Look at estimates
+summary(model.P_both)
+
 
 
 
@@ -876,6 +771,30 @@ importance_results
 
 stop()
 
+
+# separate by year
+year_breaks <- seq(as.Date("2016-01-01"), as.Date("2022-01-01"), by = "years")
+year_labels <- format(year_breaks, "%Y")
+
+# Assign CB friendly colors to sections and years
+Section.colors <- c("W" = "#00a884", 
+                    "C" = "#FF7979", 
+                    "E" = "#6D9DFF")
+yr.colors <- c("2016"="#FFBBBB",
+               "2017"="#56B4E9",
+               "2018"="#CC79A7",
+               "2019"="#0067A0",
+               "2021"="#58FF7E",
+               "2022"="#FF6666")
+Season.colors <- c("Winter"="#FFBBBB",
+               "Spring"="#56B4E9",
+               "Summer"="#CC79A7",
+               "Fall"="#0067A0")
+
+
+
+
+
 # Analyze seasonal and yearly patterns in detail
 
 # 1. SEASONAL PATTERNS
@@ -931,6 +850,95 @@ min_year <- year_results[which.min(year_results$response), ]
 yearly_ratio <- max_year$response / min_year$response
 print(paste("Highest year (", max_year$Year, ") had", round(yearly_ratio, 2), 
             "times more clams than least year (", min_year$Year, ")"))
+
+```
+
+``` {r Prevalence Seasonal & Yearly Patterns}
+# Analyze prevalence seasonal and yearly patterns in detail
+
+# The following code is only needed if there is not significant bias found above
+
+stop()
+
+
+# 1. SEASONAL PATTERNS
+print("=== PREVALENCE SEASONAL PATTERNS ===")
+P.season_emm <- emmeans(P.best_model2, ~ Season, type = "response")
+P.season_results <- as.data.frame(P.season_emm) %>%
+  rename(lower_col = asymp.LCL,
+         upper_col = asymp.UCL)
+print(P.season_results)
+
+# Plot seasonal effects
+
+P.season_pattern <- ggplot(P.season_results, aes(x = Season, y = prob)) +
+  geom_point(size = 4, color = "steelblue") +
+  geom_errorbar(aes(ymin = lower_col, ymax = upper_col), width = 0.2, linewidth = 1) +
+  labs(title = "Prevalence Seasonal Pattern in Clam Counts", 
+       subtitle = "Estimated marginal means ± 95% CI",
+       y = "Prevalence of Clam", x = "Season") +
+  theme_minimal() +
+  theme(text = element_text(size = 12))
+
+print(P.season_pattern)
+
+# Calculate seasonal fold-differences
+P.max_season <- P.season_results[which.max(P.season_results$prob), ]
+P.min_season <- P.season_results[which.min(P.season_results$prob), ]
+P.seasonal_ratio <- P.max_season$prob / P.min_season$prob
+print(paste("Peak season (", P.max_season$Season, ") has", round(P.seasonal_ratio, 2), 
+            "higher prevalence of clams than lowest season (", P.min_season$Season, ")"))
+
+
+# 2. YEARLY PATTERNS  
+print("=== PREVALENCE YEARLY PATTERNS ===")
+P.year_emm <- emmeans(P.best_model2, ~ Year, type = "response")
+P.year_results <- as.data.frame(P.year_emm) 
+print(P.year_results)
+
+P.year_pattern <- ggplot(P.year_results, aes(x = Year, y = prob)) +
+  geom_line(size = 1, color = "darkred") +
+  geom_point(size = 3, color = "darkred") +
+  geom_errorbar(aes_string(ymin = lower_col, ymax = upper_col), width = 0.2) +
+  labs(title = "Year-to-Year Variation in Clam Prevalence", 
+       subtitle = "Non-linear temporal trend",
+       y = "Predicted Clam Prevalence", x = "Year") +
+  theme_minimal() +
+  theme(text = element_text(size = 12))
+
+print(P.year_pattern)
+
+# Calculate yearly variation
+P.max_year <- P.year_results[which.max(P.year_results$emmean), ]
+P.min_year <- P.year_results[which.min(P.year_results$emmean), ]
+P.yearly_ratio <- P.max_year$emmean / P.min_year$emmean
+print(paste("Highest year (", P.max_year$Year, ") had", round(P.yearly_ratio, 2), 
+            "times more clams than least year (", P.min_year$Year, ")"))
+
+# 3. PREVALENCE SECTION PATTERNS  
+print("=== PREVALENCE SECTION PATTERNS ===")
+P.section_emm <- emmeans(P.best_model2, ~ Section, type = "response")
+P.section_results <- as.data.frame(P.section_emm) 
+print(P.section_results)
+
+P.section_pattern <- ggplot(P.section_results, aes(x = Section, y = prob)) +
+  geom_line(size = 1, color = "darkred") +
+  geom_point(size = 3, color = "darkred") +
+  geom_errorbar(aes_string(ymin = lower_col, ymax = upper_col), width = 0.2) +
+  labs(title = "section-to-section Variation in Clam Prevalence", 
+       subtitle = "Non-linear temporal trend",
+       y = "Predicted Clam Prevalence", x = "section") +
+  theme_minimal() +
+  theme(text = element_text(size = 12))
+
+print(P.section_pattern)
+
+# Calculate sectionly variation
+P.max_section <- P.section_results[which.max(P.section_results$prob), ]
+P.min_section <- P.section_results[which.min(P.section_results$prob), ]
+P.sectionly_ratio <- (P.max_section$prob - P.min_section$prob) * 100
+print(paste("Highest section (", P.max_section$Section, ") had", round(P.sectionly_ratio, 2), 
+            "% higher prevalence than least section (", P.min_section$Section, ")"))
 
 ```
 
