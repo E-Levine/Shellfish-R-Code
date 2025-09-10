@@ -1,7 +1,7 @@
 ---
 title: "Shell_Pest_2025_Clam"
 output: html_document
-date: Sys.Date()
+date: `r Sys.Date()`
 ---
 
 ### To make things tidier and cleaner this is only code for Clam Counts and Prevalence. Polydora and Cliona will be addressed in seperate scripts.
@@ -298,7 +298,8 @@ Count_models2 <- list('1-Section+Weight (Base)' = best_model1,
                  '4-Section+Weight+YearScaled' = model.S.TW.Y_s, 
                  '5-Section+Weight+Season+Year' = model.S.TW.Ss.Y,
                  '6-Section+Weight+Season+YearScaled' = model.S.TW.Ss.Y_s,
-                 '7-Section+Weight+Season*YearScaled' = model.S.TW.Ss.X.Y_s)                 )
+                 '7-Section+Weight+Season*YearScaled' = model.S.TW.Ss.X.Y_s
+)
 
 aictab(Count_models2) #will use one for analysis
 
@@ -579,9 +580,9 @@ model.P_both <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + Year 
 # For COUNT models
 count_bias_models <- list(
   "Original" = best_model2,  # Your best original model
-  "Observer_Bias" = model.B1_observer,
-  "Location_Bias" = model.B2_location, 
-  "Both_Biases" = model.B3_both
+  "Observer_Bias" = model.B_observer,
+  "Location_Bias" = model.B_location, 
+  "Both_Biases" = model.B_both
 )
 
 count_bias_comparison <- aictab(count_bias_models)
@@ -604,7 +605,7 @@ print(prev_bias_comparison)
 print("\n=== SIGNIFICANCE TESTS ===")
 
 # Test 1: Is ProcessedBy significant?
-observer_count_test <- anova(best_model2, model.B1_observer)
+observer_count_test <- anova(best_model2, model.B_observer)
 print("Observer effect on COUNT model:")
 print(observer_count_test)
 
@@ -613,7 +614,7 @@ print("Observer effect on PREVALENCE model:")
 print(observer_prev_test)
 
 # Test 2: Is FixedLocation significant?
-location_count_test <- anova(best_model2, model.B2_location)
+location_count_test <- anova(best_model2, model.B_location)
 print("Location effect on COUNT model:")
 print(location_count_test)
 
@@ -623,7 +624,7 @@ print(location_prev_test)
 
 # EFFECT SIZE ANALYSIS
 print("\n=== OBSERVER BIAS MAGNITUDE ===")
-observer_effects_count <- emmeans(model.B1_observer, ~ ProcessedBy, type = "response")
+observer_effects_count <- emmeans(model.B_observer, ~ ProcessedBy, type = "response")
   print("Count differences by observer:")
   observer_count_df <- as.data.frame(observer_effects_count)
   print(observer_count_df)
@@ -638,7 +639,7 @@ observer_effects_count <- emmeans(model.B1_observer, ~ ProcessedBy, type = "resp
   print("\n=== LOCATION VARIABILITY ===")
 if(any(grepl("Location", count_bias_comparison$Modnames[1:2]))) {
   # Extract random effect variance for FixedLocation
-  location_variance <- VarCorr(model.B2_location)
+  location_variance <- VarCorr(model.B_location)
   print("FixedLocation random effect variance:")
   print(location_variance)
 }
@@ -654,14 +655,14 @@ if(any(grepl("Location", count_bias_comparison$Modnames[1:2]))) {
 simulateResiduals(model.B_both, n = 175, refit = FALSE, plot = TRUE)
 
 # Check for temporal autocorrelation since we have time series data
-acf(residuals(model.B3_both, type = "pearson"))
+acf(residuals(model.B_both, type = "pearson"))
 # The residuals exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies. 
 
 # Calculate R-squared equivalent for count models. Closer to 1 is better
-r2(model.B3_both)
+r2(model.B_both)
 
 ##### Look at estimates
-summary(model.B3_both)
+summary(model.B_both)
 
 ##### Assess goodness-of-fit (prevalence)
 simulateResiduals(model.P_both, n = 175, refit = FALSE, plot = TRUE)
@@ -759,11 +760,18 @@ importance_table <- function(full_model, predictors) {
 
 predictors <- c("Section", "TotalWeight_scaled", "Season", "Year", "ProcessedBy")
 
-importance_results <- importance_table(model.B3_both, predictors)
+importance_results <- importance_table(model.B_both, predictors)
 
 importance_results
 
 ```
+
+
+
+
+`r knit_exit()`
+
+
 
 
 ``` {r Seasonal & Yearly Patterns}
@@ -951,7 +959,7 @@ print(paste("Highest section (", P.max_section$Section, ") had", round(P.section
 
 # 1. SEASONAL PATTERNS
 print("=== SEASONAL PATTERNS ===")
-season_emm.corrected <- emmeans(model.B3_both, ~ Season, type = "link")
+season_emm.corrected <- emmeans(model.B_both, ~ Season, type = "link")
 pairs(season_results.corrected)
 
 multcompview::cld(season_results, Letters = letters, type = "link")
@@ -984,7 +992,7 @@ print(paste("Peak season (", max_season$Season, ") has", round(seasonal_ratio, 2
 
 # 2. YEARLY PATTERNS  
 print("=== YEARLY PATTERNS ===")
-year_emm <- emmeans(model.B3_both, ~ Year, type = "response")
+year_emm <- emmeans(model.B_both, ~ Year, type = "response")
 year_results <- as.data.frame(year_emm) 
 print(year_results)
 
