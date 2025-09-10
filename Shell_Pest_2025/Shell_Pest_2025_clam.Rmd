@@ -1,10 +1,10 @@
 ---
 title: "Shell_Pest_2025_Clam"
 output: html_document
-date: `r Sys.Date()`
 ---
+`r Sys.Date()`
 
-### To make things tidier and cleaner this is only code for Clam Counts and Prevalence. Polydora and Cliona will be addressed in seperate scripts.
+### To make things cleaner this is only code for Clam Counts and Prevalence. Polydora and Cliona will be addressed in separate scripts.  
 
 ```{r VariableSet, echo = FALSE, warning = FALSE, message = FALSE}
 # Set your variables
@@ -163,7 +163,9 @@ rm(hsdbConditionIndex, hsdbShellPest, ShellPest, ShellPest1)
 
 ```
 
-``` {r Initial GLMM Models}
+<br>~~~ Counts: Initial GLMM Models ~~~ <br>
+
+``` {r Counts: Initial GLMM Models}
 
 # Additional optimization options if convergence issues occur:
 # control = glmmTMBControl(
@@ -210,6 +212,12 @@ model.TW.SH <- glmmTMB(TotalClamCount ~ TotalWeight_scaled + ShellHeight_scaled,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
+##### 7-TotalWeight AND ShellHeight AND Section as a fixed effect 
+model.TW.SH.S <- glmmTMB(TotalClamCount ~ TotalWeight_scaled + ShellHeight_scaled + Section,
+                   ziformula = ~1,
+                   family = nbinom2(link = "log"),
+                   data = ShellPest2)
+
 ### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
 Count_models1 <- list(
   '1-SectionOnly' = model.S,
@@ -217,13 +225,23 @@ Count_models1 <- list(
   '3-ShellHeightOnly' = model.SH, 
   '4-Section+TotalWeight' = model.S.TW, 
   '5-Section+SH' = model.S.SH,
-  '6-TotalWeight+SH' = model.TW.SH)
+  '6-TotalWeight+SH' = model.TW.SH,
+  '7-TotalWeight+SH+Section' = model.TW.SH.S)
 
 aictab(Count_models1) #will use one for analysis
+
+# Key findings from model selection
+cat("=== Counts: INITIAL MODEL SELECTION INSIGHTS === 
+      1. TotalWeight is highly important (2 >> 1 or 3 alone)
+      2. Section is important as it improves both TotalWeight and SH only models (4 & 5 >> 2 & 3)
+      3. Including Shell Height did not improve on Model #4. Residuals of Model #7 did not indicate an improvement over the simpler Model #4.")
 
 ######### Since Section&TotalWeight has a Massively better AICc, only it will be tested here
 best_model1 <- model.S.TW
 #########
+
+cat('The following is Residual results, QQ Plot, R2, and Summary for the best fitting model ONLY: 
+    4-Section+TotalWeight')
 
 ##### Assess goodness-of-fit
 simulateResiduals(best_model1, n = 250, refit = FALSE, plot = TRUE)
@@ -234,12 +252,23 @@ r2(best_model1)
 ##### Look at estimates
 summary(best_model1)
 
+# Key findings from Initial model 
+cat("=== Counts: INITIAL MODEL INSIGHTS ===
+  TotalClamCount ~ Section + TotalWeight_scaled
+      1. Model fits the data pretty well with good residuals and and R-squared near 1.
+      2. Outlier test returns a significant deviation, but is expected with a large data set (4,395 observations), so we have room to improve this model.
+      3. Larger oysters have more clams. This makes sense and conforms to basic observations.
+      4. There are statistically significant differences in the numbers of clams observed in the sections of the Bay.")
+
 # Remove unnecesssary models
-rm(model.S, model.S.SH, model.S.TW, model.SH, model.TW, model.TW.SH)
+rm(model.S, model.S.SH, model.S.TW, model.SH, model.TW, model.TW.SH, model.TW.SH.S)
 
 ```
 
-``` {r Improving Basic GLMM Models}
+<br>~~~ Counts: Improving Basic GLMM Models ~~~ <br>
+Adding Season and Year to best Initial model
+
+``` {r Counts: Improving Basic GLMM Models}
 # Extended model set: Adding Season and Year systematically
 
 ##### 1-Baseline - Best model from above
@@ -293,19 +322,29 @@ model.S.TW.Ss.X.Y_s <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + S
 
 ### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
 Count_models2 <- list('1-Section+Weight (Base)' = best_model1, 
-                 '2-Section+Weight+Season' = model.S.TW.Ss, 
-                 '3-Section+Weight+Year' = model.S.TW.Y, 
-                 '4-Section+Weight+YearScaled' = model.S.TW.Y_s, 
-                 '5-Section+Weight+Season+Year' = model.S.TW.Ss.Y,
-                 '6-Section+Weight+Season+YearScaled' = model.S.TW.Ss.Y_s,
-                 '7-Section+Weight+Season*YearScaled' = model.S.TW.Ss.X.Y_s
+                 '2-SEC+WT+Season' = model.S.TW.Ss, 
+                 '3-SEC+WT+Year' = model.S.TW.Y, 
+                 '4-SEC+WT+YearScaled' = model.S.TW.Y_s, 
+                 '5-SEC+WT+Season+Year' = model.S.TW.Ss.Y,
+                 '6-SEC+WT+Season+YearScaled' = model.S.TW.Ss.Y_s,
+                 '7-SEC+WT+Season*YearScaled' = model.S.TW.Ss.X.Y_s
 )
 
 aictab(Count_models2) #will use one for analysis
 
+# Key findings from model selection
+cat("=== Counts: IMPROVED MODEL SELECTION INSIGHTS ===
+      1. Both Season AND Year are highly important (5 >> 2 or 3 alone)
+      2. Non-linear year effects are crucial (5 >> 6: factor vs linear year)
+      3. Seasonal patterns are consistent across years (5 >> 7: no interaction needed)
+      4. Temporal factors explain MASSIVE variation (ΔAICc = 156 vs baseline)")
+
 ######### Since SectionWeight+Season+Year has a significantly better AICc, only it will be tested here
 best_model2 <- model.S.TW.Ss.Y
 #########
+
+cat('Following is Residiual results, QQ Plot, ACF series residuals, R2, and Summary for the best fitting model ONLY:   
+    5-SEC+WT+Season+Year')
 
 ##### Assess goodness-of-fit
 simulateResiduals(best_model2, n = 175, refit = FALSE, plot = TRUE)
@@ -320,12 +359,13 @@ r2(best_model2)
 ##### Look at estimates
 summary(best_model2)
 
-# Key findings from model selection
-print("=== MODEL SELECTION INSIGHTS ===")
-print("1. Both Season AND Year are highly important (5 >> 2 or 3 alone)")
-print("2. Non-linear year effects are crucial (5 >> 6: factor vs linear year)")
-print("3. Seasonal patterns are consistent across years (5 >> 7: no interaction needed)")
-print("4. Temporal factors explain MASSIVE variation (ΔAICc = 156 vs baseline)")
+# Key findings from Improved model 
+cat("=== Counts: IMPROVED MODEL INSIGHTS ===
+  TotalClamCount ~ Section + TotalWeight_scaled + Season + Year
+      1. Model fits the data pretty well with good residuals and and R-squared even closer to 1 than the Initial model.
+      2. ACF series residuals series exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies.
+      3. Key insights about larger oysters and differences between sections still hold.
+      4. There appear to be some statistical differences between the Seasons and the Years. Closer inspection of those results to follow")
 
 # Remove unnecessary models
 
@@ -333,7 +373,9 @@ rm(model.S.TW.Ss, model.S.TW.Y, model.S.TW.Y_s, model.S.TW.Ss.Y, model.S.TW.Ss.Y
 
 ```
 
-``` {r Prevalence Initial GLMM Models}
+<br>~~~ Prevalence: Initial GLMM Models ~~~ <br>
+
+``` {r Prevalence: Initial GLMM Models}
 
 # Additional optimization options if convergence issues occur:
 # control = glmmTMBControl(
@@ -386,15 +428,30 @@ P.model.TW.SH <- glmmTMB(Infected ~ TotalWeight_scaled + ShellHeight_scaled,
                    control = glmmTMBControl(optimizer = optim, 
                                           optArgs = list(method = "BFGS")))
 
+##### 7-TotalWeight AND ShellHeight AND Section as a fixed effect 
+P.model.TW.SH.S <- glmmTMB(Infected ~ TotalWeight_scaled + ShellHeight_scaled + Section,
+                   family = binomial,
+                   data = ShellPest2,
+                   control = glmmTMBControl(optimizer = optim, 
+                                          optArgs = list(method = "BFGS")))
+
 ### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
 Prevalence_models1 <- list('1-SectionOnly' = P.model.S, 
                  '2-TotalWeightOnly' = P.model.TW, 
                  '3-ShellHeightOnly' = P.model.SH, 
                  '4-Section+TotalWeight' = P.model.S.TW, 
                  '5-Section+SH' = P.model.S.SH,
-                 '6-TotalWeight+SH' = P.model.TW.SH)
+                 '6-TotalWeight+SH' = P.model.TW.SH,
+                 '7-TotalWeight+SH+Section' = P.model.TW.SH.S)
 
 aictab(Prevalence_models1) #will use one for analysis
+
+# Key findings from model selection
+cat("=== Prevalence: INITIAL MODEL SELECTION INSIGHTS === 
+      1. Adding ShellHeight to Model #4 improved AICc slightly, with no real improvements in residuals or R2 value. Thus, preference for the simpler model means that #4 was chosen as the best model.
+      2. TotalWeight is highly important (2 >> 1 or 3 alone)
+      3. Section is important as it improves both TotalWeight and SH only models (4 & 5 >> 2 & 3)")
+
 
 ######### Since Section&TotalWeight has a Massively better AICc, only it will be tested here
 P.best_model1 <- P.model.S.TW
@@ -409,12 +466,23 @@ r2(P.best_model1)
 ##### Look at estimates
 summary(P.best_model1)
 
+# Key findings from Initial model 
+cat("=== Prevalence: INITIAL MODEL INSIGHTS ===
+  Infected ~ Section + TotalWeight_scaled
+      1. Model fits the data pretty well with good residuals.
+      2. Tjur's R-squared is used here because Prevalence is a binary outcome. A value of 0.176 indicates a weak to moderate ability to discriminate between the 2 outcomes. Thus, there's lots of room for improvement.
+      3. Larger oysters have a higher prevalence. This makes sense and conforms to basic observations.
+      4. There are statistically significant differences in the prevalence of clams observed in the sections of the Bay.")
+
 # Remove unnecessay models
-rm(P.model.S, P.model.TW, P.model.SH, P.model.S.TW, P.model.S.SH, P.model.TW.SH)
+rm(P.model.S, P.model.TW, P.model.SH, P.model.S.TW, P.model.S.SH, P.model.TW.SH, P.model.TW.SH.S)
 
 ```
 
-``` {r Prevalence Improving Basic GLMM Models}
+<br>~~~ Prevalence: Improving Basic GLMM Models ~~~ <br>
+Adding Season and Year to best Initial model
+
+``` {r Prevalence: Improving Basic GLMM Models}
 # Extended model set: Adding Season and Year systematically
 
 ##### 1-Baseline - Best model from above
@@ -485,6 +553,14 @@ Prevalence_models2 <- list('1-SectionWeight (Base)' = P.best_model1,
 
 aictab(Prevalence_models2) #will use one for analysis
 
+# Key findings from model selection
+cat("=== Prevalence: MODEL SELECTION INSIGHTS ===
+      1. Both Season AND Year are highly important (5 >> 2 or 3 alone)
+      2. Non-linear year effects are crucial (5 >> 6: factor vs linear year)
+      3. Seasonal patterns are consistent across years (5 >> 7: no interaction needed)
+      4. Temporal factors explain MASSIVE variation (ΔAICc = 111 vs baseline)
+      5. Tjur's R 0.202 indicates the best model has a moderate, but not strong ability to distinguish between the two outcomes")
+
 ######### Since SectionWeight+Season+Year has a significantly better AICc, only it will be tested here
 P.best_model2 <- P.model.S.TW.Ss.Y
 #########
@@ -502,18 +578,25 @@ r2(P.best_model2)
 ##### Look at estimates
 summary(P.best_model2)
 
-# Key findings from model selection
-print("=== MODEL SELECTION INSIGHTS ===")
-print("1. Both Season AND Year are highly important (5 >> 2 or 3 alone)")
-print("2. Non-linear year effects are crucial (5 >> 6: factor vs linear year)")
-print("3. Seasonal patterns are consistent across years (5 >> 7: no interaction needed)")
-print("4. Temporal factors explain MASSIVE variation (ΔAICc = 111 vs baseline)")
-print("5. Tjur's R 0.202 indicates the best model has a moderate, but not strong ability to distinguish between the two outcomes")
+# Key findings from Initial model 
+cat("=== Prevalence: IMPROVED MODEL INSIGHTS ===
+  Infected ~ Section + TotalWeight_scaled + Season + Year
+      1. Model fits the data pretty well with good residuals. Tjur's R-squared value of 0.202 indicates a weak to moderate ability to discriminate between the 2 outcomes. Thus, there's lots of room for improvement, though better than the initial model.
+      2. ACF series residuals series exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies.
+      3. Key insights about larger oysters and differences between sections still hold.
+      4. There appear to be some statistical differences between the Seasons and the Years. Closer inspection of those results to follow")
 
 # Remove unnecessary models
-rm(P.model.S.TW.Ss, P.model.S.TW.Y, P.model.S.TW.Y_s, P.model.S.TW.Ss.Y, P.model.S.TW.Ss.Y_s, P.model.S.TW.Ss.X.Y_s)
+# rm(P.model.S.TW.Ss, P.model.S.TW.Y, P.model.S.TW.Y_s, P.model.S.TW.Ss.Y, P.model.S.TW.Ss.Y_s, P.model.S.TW.Ss.X.Y_s)
 
 ```
+
+
+
+`r knit_exit()`
+# Please move once done
+
+
 
 ``` {r Bias Testing}
 # QUALITY CONTROL ANALYSIS: Testing for Observer and Location Bias
