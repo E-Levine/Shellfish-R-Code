@@ -57,6 +57,88 @@ knitr::opts_chunk$set(
 )
 ```
 
+
+```{r Functions}
+
+# Function for creating a nuce table for Bias Testing
+importance_table <- function(full_model, predictors) {
+  # intercept-only null model
+  null_mod <- update(full_model, . ~ 1)
+  
+  # Full model pseudo-R²
+  pseudoR2 <- function(model, null_model = NULL) {
+    ll_full <- as.numeric(logLik(model))
+    if (is.null(null_model)) {
+      null_model <- update(model, . ~ 1)
+    }
+    ll_null <- as.numeric(logLik(null_model))
+    1 - (ll_full / ll_null)
+  }
+  R2_full <- pseudoR2(full_model, null_mod)
+  
+  # Function for each predictor
+  drop_one_safe <- function(var, full) {
+    # reduced model
+    reduced <- tryCatch(
+      update(full, as.formula(paste(". ~ . -", var))),
+      error = function(e) NULL,
+      warning = function(w) {invokeRestart("muffleWarning")}
+    )
+    if (is.null(reduced)) {
+      return(data.frame(
+        Predictor = var,
+        deltaAIC = NA, LRT = NA, df_diff = NA, p_value = NA,
+        R2_full = R2_full, R2_reduced = NA, deltaR2 = NA,
+        stringsAsFactors = FALSE
+      ))
+    }
+    
+    # logLik + AIC
+    ll_full <- as.numeric(logLik(full))
+    ll_red  <- as.numeric(logLik(reduced))
+    aic_full <- AIC(full)
+    aic_red  <- AIC(reduced)
+    deltaAIC <- aic_red - aic_full
+    
+    # parameter df
+    df_full <- attr(logLik(full), "df")
+    df_red  <- attr(logLik(reduced), "df")
+    if (is.null(df_full)) df_full <- length(coef(full)$cond)
+    if (is.null(df_red))  df_red  <- length(coef(reduced)$cond)
+    
+    df_diff <- as.integer(round(df_full - df_red))
+    LRT <- 2 * (ll_full - ll_red)
+    p_value <- if (!is.na(df_diff) && df_diff > 0) {
+      pchisq(LRT, df = df_diff, lower.tail = FALSE)
+    } else {
+      NA_real_
+    }
+    
+    # pseudo R²
+    R2_reduced <- pseudoR2(reduced, null_mod)
+    deltaR2 <- R2_full - R2_reduced
+    
+    data.frame(
+      Predictor = var,
+      deltaAIC = deltaAIC,
+      LRT = LRT,
+      df_diff = df_diff,
+      p_value = p_value,
+      R2_full = R2_full,
+      R2_reduced = R2_reduced,
+      deltaR2 = deltaR2,
+      stringsAsFactors = FALSE
+    )
+  }
+  
+  # Build table
+  results <- do.call(rbind, lapply(predictors, drop_one_safe, full = full_model))
+  results <- results %>% arrange(desc(deltaR2))
+  return(results)
+}
+
+```
+
 ```{r DatabaseDownload}
 # Connect to Local database server and pull all necessary data, then close connection 
 con <- dbConnect(odbc(),
@@ -337,7 +419,7 @@ cat("=== Counts: IMPROVED MODEL SELECTION INSIGHTS ===
       1. Both Season AND Year are highly important (5 >> 2 or 3 alone)
       2. Non-linear year effects are crucial (5 >> 6: factor vs linear year)
       3. Seasonal patterns are consistent across years (5 >> 7: no interaction needed)
-      4. Temporal factors explain MASSIVE variation (ΔAICc = 156 vs baseline)")
+      4. Temporal factors explain MASSIVE variation (ΔAICc = 145 vs baseline)")
 
 ######### Since SectionWeight+Season+Year has a significantly better AICc, only it will be tested here
 best_model2 <- model.S.TW.Ss.Y
@@ -372,6 +454,105 @@ cat("=== Counts: IMPROVED MODEL INSIGHTS ===
 rm(model.S.TW.Ss, model.S.TW.Y, model.S.TW.Y_s, model.S.TW.Ss.Y, model.S.TW.Ss.Y_s, model.S.TW.Ss.X.Y_s)
 
 ```
+
+<br>~~~ Counts: Bias Testing ~~~ <br>
+Examining the impact of observers and locations, as both have changed over the years
+
+
+``` {r Counts: Bias Testing}
+
+# BIAS TESTING MODELS
+
+##### 1-Baseline - Best model from above
+### Add Season AND Year (factor)
+# Section AND TotalWeight AND Season AND Year as a fixed effect 
+# model.S.TW.Ss.Y <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year,
+#                    ziformula = ~1,
+#                    family = nbinom2(link = "log"),
+#                    data = ShellPest2)
+
+# OBSERVER BIAS TESTING 
+# 2-Add ProcessedBy to count model
+model.count_observer <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year + ProcessedBy,
+                            ziformula = ~ 1,
+                            family = nbinom2(link = "log"),
+                            data = ShellPest2)
+
+# LOCATION BIAS TESTING
+# 3-Add FixedLocation as random effect (nested within Section) to count model
+model.count_location <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year + (1|FixedLocation),
+                            ziformula = ~ 1,
+                            family = nbinom2(link = "log"),
+                            data = ShellPest2)
+
+# COMBINED BIAS TESTING 
+# 4-Both observer and location effects on counts
+model.count_both <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year + ProcessedBy + (1|FixedLocation),
+                        ziformula = ~ 1,
+                        family = nbinom2(link = "log"),
+                        data = ShellPest2)
+
+### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
+# For COUNT models
+count_bias_models <- list(
+  "Original" = best_model2,  # Your best Improved model
+  "Observer_Bias" = model.count_observer,
+  "Location_Bias" = model.count_location, 
+  "Both_Biases" = model.count_both
+)
+
+aictab(count_bias_models)
+
+# Key findings from model selection
+cat("=== Counts: BIAS TESTING MODEL SELECTION INSIGHTS ===
+      1. Both Biases are present in Clam count data (ΔAICc = 632 vs baseline)
+      2. Location and Observer have a large impact on results")
+
+# simulateResiduals(model.count_observer, n = 150, refit = FALSE, plot = TRUE)
+# simulateResiduals(model.count_location, n = 150, refit = FALSE, plot = TRUE)
+simulateResiduals(model.count_both, n = 150, refit = FALSE, plot = TRUE)
+
+# Check for temporal autocorrelation since we have time series data
+acf(residuals(model.count_both, type = "pearson"))
+
+# r2(model.count_observer)
+# r2(model.count_location)
+r2(model.count_both)
+
+summary(model.count_both)
+
+# Key findings from Bias testing model 
+cat("=== Counts: BIAS TESTING MODEL INSIGHTS ===
+  TotalClamCount ~ Section + TotalWeight_scaled + Season + Year + ProcessedBy + (1|FixedLocation)
+      1. Model fits the data pretty well with good residuals and and R-squared even if it is slightly lower than the Improved model. KS Test fail is expected with a large data set, and nothing looks wrong with the plot otherwise.
+      2. ACF series residuals series exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies.
+      3. The MASSIVE increase in model performance with both biases raise a lot of doubt about the Improved Model's insights. ")
+
+# Assign predictors of variance to see what has the most amount of influence in the bias model
+predictors <- c("Section", "TotalWeight_scaled", "Season", "Year", "ProcessedBy")
+
+# uses the importantance_table function to make a clean table detail each factor's importance in the final model
+importance_results <- importance_table(model.count_both, predictors) 
+kable(importance_results, format = "pipe", digits = 3)
+
+# Key findings from Bias Importance  
+cat("=== Counts: BIAS TESTING IMPORTANCE TABLE ===
+      1. Large Positive ΔAIC indicates that TotalWeight and Processed by are extremely important predictors. 
+      2. Section's negative ΔAIC indicates it doesn't really improve the model.
+      3. TotalWeight and Processed by have very small p-values (e-215 and e-62), indicating they are highly significant.
+      4. Year and Season are both significant with very low p-values (e-15 and e-10), but far less than weight and processor.
+      5. Section is not significant (p = 0.53).
+      6. ΔR2 measures how much of the model’s explained variance is uniquely attributable to that predictor. TotalWeight explains ~6% on its own; ProcessedBy adds ~2%; Year and Season add only ~0.5% and 0.3%, respectively; Section contributes virtually nothing.")
+
+cat(" |||||||||||||||||||||||||||| CONCLUSION |||||||||||||||||||||||||||| 
+    1. TotalWeight is by far the strongest driver of clam counts. Heavier clams tend to have more clams.
+    2. Given the outsized impact of bias on this data, no other strong insights can be drawn without significant reprocessing, retraining, and robust QA measures being put in place. After which all these tests need to be run again and more detailed analysis run to determine any significant differences.
+    3. This solution represents a large input of staff time (thousands of hours) for a small amount of benefit.
+*** 4. Recommendation is to discontinue counting clams in ShellPest data. ***")
+
+```
+
+
 
 <br>~~~ Prevalence: Initial GLMM Models ~~~ <br>
 
@@ -558,8 +739,7 @@ cat("=== Prevalence: MODEL SELECTION INSIGHTS ===
       1. Both Season AND Year are highly important (5 >> 2 or 3 alone)
       2. Non-linear year effects are crucial (5 >> 6: factor vs linear year)
       3. Seasonal patterns are consistent across years (5 >> 7: no interaction needed)
-      4. Temporal factors explain MASSIVE variation (ΔAICc = 111 vs baseline)
-      5. Tjur's R 0.202 indicates the best model has a moderate, but not strong ability to distinguish between the two outcomes")
+      4. Temporal factors explain MASSIVE variation (ΔAICc = 111 vs baseline)")
 
 ######### Since SectionWeight+Season+Year has a significantly better AICc, only it will be tested here
 P.best_model2 <- P.model.S.TW.Ss.Y
