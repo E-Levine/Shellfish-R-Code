@@ -425,7 +425,7 @@ cat("=== Counts: IMPROVED MODEL SELECTION INSIGHTS ===
 best_model2 <- model.S.TW.Ss.Y
 #########
 
-cat('Following is Residiual results, QQ Plot, ACF series residuals, R2, and Summary for the best fitting model ONLY:   
+cat('Following is Residual results, QQ Plot, ACF series residuals, R2, and Summary for the best fitting model ONLY:   
     5-SEC+WT+Season+Year')
 
 ##### Assess goodness-of-fit
@@ -505,7 +505,7 @@ aictab(count_bias_models)
 
 # Key findings from model selection
 cat("=== Counts: BIAS TESTING MODEL SELECTION INSIGHTS ===
-      1. Both Biases are present in Clam count data (ΔAICc = 632 vs baseline)
+      1. Both Biases are present in Clam count data (ΔAICc = 769 vs baseline)
       2. Location and Observer have a large impact on results")
 
 # simulateResiduals(model.count_observer, n = 150, refit = FALSE, plot = TRUE)
@@ -531,18 +531,23 @@ cat("=== Counts: BIAS TESTING MODEL INSIGHTS ===
 # Assign predictors of variance to see what has the most amount of influence in the bias model
 predictors <- c("Section", "TotalWeight_scaled", "Season", "Year", "ProcessedBy")
 
+# Uses Intraclass Correlation Coefficient (ICC) to quantify how much variation in your outcomeis attributable to Random effects
+cat("Intraclass Correlation Coefficient (ICC) quantifies how much variation is attributable to Random effects:")
+icc(model.count_both)
+
 # uses the importantance_table function to make a clean table detail each factor's importance in the final model
 importance_results <- importance_table(model.count_both, predictors) 
 kable(importance_results, format = "pipe", digits = 3)
 
 # Key findings from Bias Importance  
-cat("=== Counts: BIAS TESTING IMPORTANCE TABLE ===
-      1. Large Positive ΔAIC indicates that TotalWeight and Processed by are extremely important predictors. 
-      2. Section's negative ΔAIC indicates it doesn't really improve the model.
-      3. TotalWeight and Processed by have very small p-values (e-215 and e-62), indicating they are highly significant.
-      4. Year and Season are both significant with very low p-values (e-15 and e-10), but far less than weight and processor.
-      5. Section is not significant (p = 0.53).
-      6. ΔR2 measures how much of the model’s explained variance is uniquely attributable to that predictor. TotalWeight explains ~6% on its own; ProcessedBy adds ~2%; Year and Season add only ~0.5% and 0.3%, respectively; Section contributes virtually nothing.")
+cat("=== Counts: BIAS TESTING IMPORTANCE TABLE & ICC ===
+      1. MASSIVE Adjusted ICC indicates that after controliing for other factors, ~60% of the variance is attributable to the random effect of FixedLocation, which is overwhelming.
+      2. Large Positive ΔAIC indicates that TotalWeight and Processed by are extremely important predictors. 
+      3. Section's negative ΔAIC indicates it doesn't really improve the model.
+      4. TotalWeight and Processed by have very small p-values (e-215 and e-62), indicating they are highly significant.
+      5. Year and Season are both significant with very low p-values (e-15 and e-10), but far less than weight and processor.
+      6. Section is not significant (p = 0.53).
+      7. ΔR2 measures how much of the model’s explained variance is uniquely attributable to that predictor. TotalWeight explains ~6% on its own; ProcessedBy adds ~2%; Year and Season add only ~0.5% and 0.3%, respectively; Section contributes virtually nothing.")
 
 cat(" |||||||||||||||||||||||||||| CONCLUSION |||||||||||||||||||||||||||| 
     1. TotalWeight is by far the strongest driver of clam counts. Heavier clams tend to have more clams.
@@ -551,8 +556,6 @@ cat(" |||||||||||||||||||||||||||| CONCLUSION ||||||||||||||||||||||||||||
 *** 4. Recommendation is to discontinue counting clams in ShellPest data. ***")
 
 ```
-
-
 
 <br>~~~ Prevalence: Initial GLMM Models ~~~ <br>
 
@@ -632,7 +635,6 @@ cat("=== Prevalence: INITIAL MODEL SELECTION INSIGHTS ===
       1. Adding ShellHeight to Model #4 improved AICc slightly, with no real improvements in residuals or R2 value. Thus, preference for the simpler model means that #4 was chosen as the best model.
       2. TotalWeight is highly important (2 >> 1 or 3 alone)
       3. Section is important as it improves both TotalWeight and SH only models (4 & 5 >> 2 & 3)")
-
 
 ######### Since Section&TotalWeight has a Massively better AICc, only it will be tested here
 P.best_model1 <- P.model.S.TW
@@ -771,7 +773,128 @@ cat("=== Prevalence: IMPROVED MODEL INSIGHTS ===
 
 ```
 
+<br>~~~ Prevalence: Bias Testing ~~~ <br>
+Examining the impact of observers and locations, as both have changed over the years
 
+``` {r Prevalence: Bias Testing}
+
+# BIAS TESTING MODELS
+
+##### 1-Baseline - Best model from above
+### Add Season AND Year (factor)
+# P.model.S.TW.Ss.Y <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + Year,
+#                    family = binomial,
+#                    data = ShellPest2,
+#                    control = glmmTMBControl(optimizer = optim, 
+#                                           optArgs = list(method = "BFGS")))
+
+
+
+
+# OBSERVER BIAS TESTING 
+# 2-Add ProcessedBy to prevalence model
+model.P_observer <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + Year + ProcessedBy,
+                           family = binomial,
+                           data = ShellPest2,
+                           control = glmmTMBControl(optimizer = optim,
+                                                  optArgs = list(method = "BFGS")))
+
+
+# LOCATION BIAS TESTING
+# 3-Add FixedLocation as random effect (nested within Section) to prevalence model
+model.P_location <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + Year + (1|FixedLocation),
+                           family = binomial,
+                           data = ShellPest2,
+                           control = glmmTMBControl(optimizer = optim,
+                                                  optArgs = list(method = "BFGS")))
+
+
+# COMBINED BIAS TESTING 
+# 4-Both observer and location effects on prevalence
+model.P_both <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + Year + ProcessedBy + (1|FixedLocation),
+                       family = binomial,
+                       data = ShellPest2,
+                       control = glmmTMBControl(optimizer = optim,
+                                              optArgs = list(method = "BFGS")))
+
+### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
+# For COUNT models
+prevalence_bias_models <- list(
+  "Original" = P.best_model2,  # Your best Improved model
+  "Observer_Bias" = model.P_observer,
+  "Location_Bias" = model.P_location, 
+  "Both_Biases" = model.P_both
+)
+
+aictab(prevalence_bias_models)
+
+# Key findings from model selection
+cat("=== Prevalence: BIAS TESTING MODEL SELECTION INSIGHTS ===
+      1. Both Biases are present in Clam prevalence data (ΔAICc = 534 vs baseline)
+      2. Location and Observer have a large impact on results")
+
+# simulateResiduals(model.P_observer, n = 250, refit = FALSE, plot = TRUE)
+# simulateResiduals(model.P_location, n = 250, refit = FALSE, plot = TRUE)
+simulateResiduals(model.P_both, n = 250, refit = FALSE, plot = TRUE)
+
+# Check for temporal autocorrelation since we have time series data
+acf(residuals(model.count_both, type = "pearson"))
+
+# r2(model.P_observer)
+# r2(model.P_location)
+r2(model.P_both)
+
+summary(model.P_both)
+
+# Key findings from Bias testing model 
+cat("=== Prevalence: BIAS TESTING MODEL INSIGHTS ===
+  Infected ~ Section + TotalWeight_scaled + Season + Year + ProcessedBy + (1|FixedLocation)
+      1. Model fits the data pretty well with good residuals and and R-squared MASSIVELY better than the Improved model. KS Test fail is expected with a large data set, and nothing looks wrong with the plot otherwise.
+      2. ACF series residuals series exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies.
+      3. The MASSIVE increase in model performance with both biases raise a lot of doubt about the Improved Model's insights. ")
+
+# Assign predictors of variance to see what has the most amount of influence in the bias model
+predictors.P <- c("Section", "TotalWeight_scaled", "Season", "Year", "ProcessedBy")
+
+# Uses Intraclass Correlation Coefficient (ICC) to quantify how much variation in your outcomeis attributable to Random effects
+cat("Intraclass Correlation Coefficient (ICC) quantifies how much variation is attributable to Random effects:")
+icc(model.P_both)
+
+# uses the importantance_table function to make a clean table detail each factor's importance in the final model
+importance_results.P <- importance_table(model.P_both, predictors.P) 
+kable(importance_results.P, format = "pipe", digits = 3)
+
+# Key findings from Bias Importance  
+cat("=== Prevalence: BIAS TESTING IMPORTANCE TABLE & ICC ===
+      1. Adjusted ICC indicates that after controliing for other factors, ~11% of the variance is attributable to the random effect of FixedLocation, which is substantial.
+      2. Large Positive ΔAIC indicates that TotalWeight and Processed by are extremely important predictors. 
+      3. Section's negative ΔAIC indicates it doesn't really improve the model.
+      4. TotalWeight and Processed by have very small p-values (e-129 and e-52), indicating they are highly significant.
+      5. Year and Season are both significant with very low p-values (e-7 and e-8), but far less than weight and processor.
+      6. Section is not significant (p = 0.53).
+      7. ΔR2 measures how much of the model’s explained variance is uniquely attributable to that predictor. TotalWeight explains ~10% on its own; ProcessedBy adds ~5%; Year and Season add only ~0.6% each; Section contributes virtually nothing.")
+
+cat(" |||||||||||||||||||||||||||| CONCLUSION |||||||||||||||||||||||||||| 
+    1. TotalWeight is by far the strongest driver of clam prevalence. Heavier clams tend to have more clams.
+    2. Given the outsized impact of bias on this data, no other strong insights can be drawn without significant reprocessing, retraining, and robust QA measures being put in place. After which all these tests need to be run again and more detailed analysis run to determine any significant differences.
+    3. This solution represents a large input of staff time (thousands of hours) for a small amount of benefit.
+*** 4. Recommendation is to discontinue noting the presence or absence of clams in ShellPest data. ***")
+
+
+prevbiascomp <- aictab(prevalence_bias_models)
+
+  # Calculate variation between locations
+  print("\n=== LOCATION VARIABILITY ===")
+if(any(grepl("Location_Bias", prevbiascomp$Modnames[1:2]))) {
+  # Extract random effect variance for FixedLocation
+  location_variance.P <- VarCorr(model.P_location)
+  print("FixedLocation random effect variance:")
+  print(location_variance.P)
+}
+  
+ 
+  
+```
 
 `r knit_exit()`
 # Please move once done
