@@ -1,5 +1,5 @@
 ---
-title: "Shell_Pest_2025_Clam"
+title: "Shell_Pest_2025_Clam_Colin"
 output: html_document
 ---
 `r Sys.Date()`
@@ -9,16 +9,11 @@ output: html_document
 ```{r VariableSet, echo = FALSE, warning = FALSE, message = FALSE}
 # Set your variables
 Estuaries <- c("AB") # Limits to only Apalachicola Bay
-Database = "OysterLocalMD20250821"  # Set the local database to use
-Server = "localhost\\LOCALSQL" # Set the local Server to use
 ```
 
 ```{r PackageLoad, echo = FALSE, warning = FALSE, message = FALSE}
 # Load necessary R packages
 library(tidyverse)
-library(odbc)
-library(DBI)
-library(dbplyr)
 library(lubridate)
 library(knitr)
 library(openxlsx)
@@ -138,22 +133,11 @@ importance_table <- function(full_model, predictors) {
 ```
 
 ```{r DatabaseDownload}
-# Connect to Local database server and pull all necessary data, then close connection 
-con <- dbConnect(odbc(),
-                    Driver = "SQL Server", 
-                    Server = Server,
-                    Database = Database,
-                    Authentication = "ActiveDirectoryIntegrated")
 
-hsdbShellPest <- tbl(con,in_schema("hsdb", "ShellPest")) %>%
-  collect() %>%
-  filter(substring(SampleEventID, 1, 2) %in% Estuaries)
+hsdbShellPest <- read.csv("hsdbShellPest.csv")
 
-hsdbConditionIndex <- tbl(con,in_schema("hsdb", "ConditionIndex")) %>%
-  collect() %>%
-  filter(substring(SampleEventID, 1, 2) %in% Estuaries)
+hsdbConditionIndex <- read.csv("hsdbConditionIndex.csv")
 
-DBI::dbDisconnect(con)
 ```
 
 ```{r DataFiltersBasic}
@@ -881,171 +865,3 @@ cat(" |||||||||||||||||||||||||||| CONCLUSION ||||||||||||||||||||||||||||
 ```
 
 `r knit_exit()`
-
-``` {r Seasonal & Yearly Patterns, eval = FALSE}
-# The following code is only needed if there is not significant bias found above
-# Massive Bias found, so do not run
-
-
-# separate by year
-year_breaks <- seq(as.Date("2016-01-01"), as.Date("2022-01-01"), by = "years")
-year_labels <- format(year_breaks, "%Y")
-
-# Assign CB friendly colors to sections and years
-Section.colors <- c("W" = "#00a884", 
-                    "C" = "#FF7979", 
-                    "E" = "#6D9DFF")
-yr.colors <- c("2016"="#FFBBBB",
-               "2017"="#56B4E9",
-               "2018"="#CC79A7",
-               "2019"="#0067A0",
-               "2021"="#58FF7E",
-               "2022"="#FF6666")
-Season.colors <- c("Winter"="#FFBBBB",
-               "Spring"="#56B4E9",
-               "Summer"="#CC79A7",
-               "Fall"="#0067A0")
-
-# Analyze seasonal and yearly patterns in detail
-
-# 1. SEASONAL PATTERNS
-print("=== SEASONAL PATTERNS ===")
-season_emm <- emmeans(best_model2, ~ Season, type = "response")
-season_results <- as.data.frame(season_emm) %>%
-  rename(lower_col = asymp.LCL,
-         upper_col = asymp.UCL)
-print(season_results)
-
-# Plot seasonal effects
-
-season_pattern <- ggplot(season_results, aes(x = Season, y = response)) +
-  geom_point(size = 4, color = "steelblue") +
-  geom_errorbar(aes(ymin = lower_col, ymax = upper_col), width = 0.2, linewidth = 1) +
-  labs(title = "Seasonal Pattern in Clam Counts", 
-       subtitle = "Estimated marginal means ± 95% CI",
-       y = "Predicted Clam Count", x = "Season") +
-  theme_minimal() +
-  theme(text = element_text(size = 12))
-
-print(season_pattern)
-
-# Calculate seasonal fold-differences
-max_season <- season_results[which.max(season_results$response), ]
-min_season <- season_results[which.min(season_results$response), ]
-seasonal_ratio <- max_season$response / min_season$response
-print(paste("Peak season (", max_season$Season, ") has", round(seasonal_ratio, 2), 
-            "times more clams than lowest season (", min_season$Season, ")"))
-
-
-# 2. YEARLY PATTERNS  
-print("=== YEARLY PATTERNS ===")
-year_emm <- emmeans(best_model2, ~ Year, type = "response")
-year_results <- as.data.frame(year_emm) 
-print(year_results)
-
-year_pattern <- ggplot(year_results, aes(x = Year, y = response)) +
-  geom_line(size = 1, color = "darkred") +
-  geom_point(size = 3, color = "darkred") +
-  geom_errorbar(aes_string(ymin = lower_col, ymax = upper_col), width = 0.2) +
-  labs(title = "Year-to-Year Variation in Clam Counts", 
-       subtitle = "Non-linear temporal trend",
-       y = "Predicted Clam Count", x = "Year") +
-  theme_minimal() +
-  theme(text = element_text(size = 12))
-
-print(year_pattern)
-
-# Calculate yearly variation
-max_year <- year_results[which.max(year_results$response), ]
-min_year <- year_results[which.min(year_results$response), ]
-yearly_ratio <- max_year$response / min_year$response
-print(paste("Highest year (", max_year$Year, ") had", round(yearly_ratio, 2), 
-            "times more clams than least year (", min_year$Year, ")"))
-
-```
-
-``` {r Prevalence Seasonal & Yearly Patterns, eval = FALSE}
-# Analyze prevalence seasonal and yearly patterns in detail
-
-# The following code is only needed if there is not significant bias found above
-
-# 1. SEASONAL PATTERNS
-print("=== PREVALENCE SEASONAL PATTERNS ===")
-P.season_emm <- emmeans(P.best_model2, ~ Season, type = "response")
-P.season_results <- as.data.frame(P.season_emm) %>%
-  rename(lower_col = asymp.LCL,
-         upper_col = asymp.UCL)
-print(P.season_results)
-
-# Plot seasonal effects
-
-P.season_pattern <- ggplot(P.season_results, aes(x = Season, y = prob)) +
-  geom_point(size = 4, color = "steelblue") +
-  geom_errorbar(aes(ymin = lower_col, ymax = upper_col), width = 0.2, linewidth = 1) +
-  labs(title = "Prevalence Seasonal Pattern in Clam Counts", 
-       subtitle = "Estimated marginal means ± 95% CI",
-       y = "Prevalence of Clam", x = "Season") +
-  theme_minimal() +
-  theme(text = element_text(size = 12))
-
-print(P.season_pattern)
-
-# Calculate seasonal fold-differences
-P.max_season <- P.season_results[which.max(P.season_results$prob), ]
-P.min_season <- P.season_results[which.min(P.season_results$prob), ]
-P.seasonal_ratio <- P.max_season$prob / P.min_season$prob
-print(paste("Peak season (", P.max_season$Season, ") has", round(P.seasonal_ratio, 2), 
-            "higher prevalence of clams than lowest season (", P.min_season$Season, ")"))
-
-
-# 2. YEARLY PATTERNS  
-print("=== PREVALENCE YEARLY PATTERNS ===")
-P.year_emm <- emmeans(P.best_model2, ~ Year, type = "response")
-P.year_results <- as.data.frame(P.year_emm) 
-print(P.year_results)
-
-P.year_pattern <- ggplot(P.year_results, aes(x = Year, y = prob)) +
-  geom_line(size = 1, color = "darkred") +
-  geom_point(size = 3, color = "darkred") +
-  geom_errorbar(aes_string(ymin = lower_col, ymax = upper_col), width = 0.2) +
-  labs(title = "Year-to-Year Variation in Clam Prevalence", 
-       subtitle = "Non-linear temporal trend",
-       y = "Predicted Clam Prevalence", x = "Year") +
-  theme_minimal() +
-  theme(text = element_text(size = 12))
-
-print(P.year_pattern)
-
-# Calculate yearly variation
-P.max_year <- P.year_results[which.max(P.year_results$emmean), ]
-P.min_year <- P.year_results[which.min(P.year_results$emmean), ]
-P.yearly_ratio <- P.max_year$emmean / P.min_year$emmean
-print(paste("Highest year (", P.max_year$Year, ") had", round(P.yearly_ratio, 2), 
-            "times more clams than least year (", P.min_year$Year, ")"))
-
-# 3. PREVALENCE SECTION PATTERNS  
-print("=== PREVALENCE SECTION PATTERNS ===")
-P.section_emm <- emmeans(P.best_model2, ~ Section, type = "response")
-P.section_results <- as.data.frame(P.section_emm) 
-print(P.section_results)
-
-P.section_pattern <- ggplot(P.section_results, aes(x = Section, y = prob)) +
-  geom_line(size = 1, color = "darkred") +
-  geom_point(size = 3, color = "darkred") +
-  geom_errorbar(aes_string(ymin = lower_col, ymax = upper_col), width = 0.2) +
-  labs(title = "section-to-section Variation in Clam Prevalence", 
-       subtitle = "Non-linear temporal trend",
-       y = "Predicted Clam Prevalence", x = "section") +
-  theme_minimal() +
-  theme(text = element_text(size = 12))
-
-print(P.section_pattern)
-
-# Calculate sectionly variation
-P.max_section <- P.section_results[which.max(P.section_results$prob), ]
-P.min_section <- P.section_results[which.min(P.section_results$prob), ]
-P.sectionly_ratio <- (P.max_section$prob - P.min_section$prob) * 100
-print(paste("Highest section (", P.max_section$Section, ") had", round(P.sectionly_ratio, 2), 
-            "% higher prevalence than least section (", P.min_section$Section, ")"))
-
-```
