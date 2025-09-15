@@ -1,0 +1,157 @@
+---
+title: "Shell_Pest_2025_Clam"
+output: html_document
+---
+`r Sys.Date()`
+
+### To make things cleaner this is only code for Clam Counts and Prevalence. Polydora and Cliona will be addressed in separate scripts.  
+
+```{r VariableSet, echo = FALSE, warning = FALSE, message = FALSE}
+# Set your variables
+Estuaries <- c("AB") # Limits to only Apalachicola Bay
+Database = "OysterLocalMD20250821"  # Set the local database to use
+Server = "localhost\\LOCALSQL" # Set the local Server to use
+```
+
+```{r PackageLoad, echo = FALSE, warning = FALSE, message = FALSE}
+# Load necessary R packages
+library(tidyverse)
+library(odbc)
+library(DBI)
+library(dbplyr)
+library(lubridate)
+library(knitr)
+library(openxlsx)
+library(car)
+
+#chatGPT
+library(gridExtra)
+library(multcompView)
+
+# From Sarah/Colin's CI GamaAnalysis
+library(Matrix)
+library(glmmTMB)
+library(DHARMa)
+library(emmeans)
+library(AICcmodavg)
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+library(ggridges)
+library(ggh4x)
+library(DHARMa)
+
+# From Claude
+library(performance)
+
+```
+
+```{r ConfigureChunks, warning=FALSE, include=FALSE}
+# Configure chunks
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+
+```{r Functions}
+
+# Function for creating a nuce table for Bias Testing
+importance_table <- function(full_model, predictors) {
+  # intercept-only null model
+  null_mod <- update(full_model, . ~ 1)
+  
+  # Full model pseudo-R²
+  pseudoR2 <- function(model, null_model = NULL) {
+    ll_full <- as.numeric(logLik(model))
+    if (is.null(null_model)) {
+      null_model <- update(model, . ~ 1)
+    }
+    ll_null <- as.numeric(logLik(null_model))
+    1 - (ll_full / ll_null)
+  }
+  R2_full <- pseudoR2(full_model, null_mod)
+  
+  # Function for each predictor
+  drop_one_safe <- function(var, full) {
+    # reduced model
+    reduced <- tryCatch(
+      update(full, as.formula(paste(". ~ . -", var))),
+      error = function(e) NULL,
+      warning = function(w) {invokeRestart("muffleWarning")}
+    )
+    if (is.null(reduced)) {
+      return(data.frame(
+        Predictor = var,
+        deltaAIC = NA, LRT = NA, df_diff = NA, p_value = NA,
+        R2_full = R2_full, R2_reduced = NA, deltaR2 = NA,
+        stringsAsFactors = FALSE
+      ))
+    }
+    
+    # logLik + AIC
+    ll_full <- as.numeric(logLik(full))
+    ll_red  <- as.numeric(logLik(reduced))
+    aic_full <- AIC(full)
+    aic_red  <- AIC(reduced)
+    deltaAIC <- aic_red - aic_full
+    
+    # parameter df
+    df_full <- attr(logLik(full), "df")
+    df_red  <- attr(logLik(reduced), "df")
+    if (is.null(df_full)) df_full <- length(coef(full)$cond)
+    if (is.null(df_red))  df_red  <- length(coef(reduced)$cond)
+    
+    df_diff <- as.integer(round(df_full - df_red))
+    LRT <- 2 * (ll_full - ll_red)
+    p_value <- if (!is.na(df_diff) && df_diff > 0) {
+      pchisq(LRT, df = df_diff, lower.tail = FALSE)
+    } else {
+      NA_real_
+    }
+    
+    # pseudo R²
+    R2_reduced <- pseudoR2(reduced, null_mod)
+    deltaR2 <- R2_full - R2_reduced
+    
+    data.frame(
+      Predictor = var,
+      deltaAIC = deltaAIC,
+      LRT = LRT,
+      df_diff = df_diff,
+      p_value = p_value,
+      R2_full = R2_full,
+      R2_reduced = R2_reduced,
+      deltaR2 = deltaR2,
+      stringsAsFactors = FALSE
+    )
+  }
+  
+  # Build table
+  results <- do.call(rbind, lapply(predictors, drop_one_safe, full = full_model))
+  results <- results %>% arrange(desc(deltaR2))
+  return(results)
+}
+
+```
+
+```{r DatabaseDownload}
+# Connect to Local database server and pull all necessary data, then close connection 
+con <- dbConnect(odbc(),
+                    Driver = "SQL Server", 
+                    Server = Server,
+                    Database = Database,
+                    Authentication = "ActiveDirectoryIntegrated")
+
+hsdbShellPest <- tbl(con,in_schema("hsdb", "ShellPest")) %>%
+  collect() %>%
+  filter(substring(SampleEventID, 1, 2) %in% Estuaries)
+
+hsdbConditionIndex <- tbl(con,in_schema("hsdb", "ConditionIndex")) %>%
+  collect() %>%
+  filter(substring(SampleEventID, 1, 2) %in% Estuaries)
+
+DBI::dbDisconnect(con)
+```
