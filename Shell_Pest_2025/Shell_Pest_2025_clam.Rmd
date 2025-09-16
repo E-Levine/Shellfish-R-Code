@@ -25,8 +25,6 @@ library(openxlsx)
 library(car)
 
 #chatGPT
-library(effsize)
-library(lsr)
 library(gridExtra)
 library(multcompView)
 
@@ -550,7 +548,7 @@ cat("=== Counts: BIAS TESTING IMPORTANCE TABLE & ICC ===
       7. ΔR2 measures how much of the model’s explained variance is uniquely attributable to that predictor. TotalWeight explains ~6% on its own; ProcessedBy adds ~2%; Year and Season add only ~0.5% and 0.3%, respectively; Section contributes virtually nothing.")
 
 cat(" |||||||||||||||||||||||||||| CONCLUSION |||||||||||||||||||||||||||| 
-    1. TotalWeight is by far the strongest driver of clam counts. Heavier clams tend to have more clams.
+    1. TotalWeight is by far the strongest driver of clam counts. Heavier oysters tend to have more clams.
     2. Given the outsized impact of bias on this data, no other strong insights can be drawn without significant reprocessing, retraining, and robust QA measures being put in place. After which all these tests need to be run again and more detailed analysis run to determine any significant differences.
     3. This solution represents a large input of staff time (thousands of hours) for a small amount of benefit.
 *** 4. Recommendation is to discontinue counting clams in ShellPest data. ***")
@@ -875,7 +873,7 @@ cat("=== Prevalence: BIAS TESTING IMPORTANCE TABLE & ICC ===
       7. ΔR2 measures how much of the model’s explained variance is uniquely attributable to that predictor. TotalWeight explains ~10% on its own; ProcessedBy adds ~5%; Year and Season add only ~0.6% each; Section contributes virtually nothing.")
 
 cat(" |||||||||||||||||||||||||||| CONCLUSION |||||||||||||||||||||||||||| 
-    1. TotalWeight is by far the strongest driver of clam prevalence. Heavier clams tend to have more clams.
+    1. TotalWeight is by far the strongest driver of clam prevalence. Heavier oysters tend to have more clams.
     2. Given the outsized impact of bias on this data, no other strong insights can be drawn without significant reprocessing, retraining, and robust QA measures being put in place. After which all these tests need to be run again and more detailed analysis run to determine any significant differences.
     3. This solution represents a large input of staff time (thousands of hours) for a small amount of benefit.
 *** 4. Recommendation is to discontinue noting the presence or absence of clams in ShellPest data. ***")
