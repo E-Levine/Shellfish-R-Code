@@ -272,46 +272,47 @@ ShellPest2$Infected <- ifelse(ShellPest2$ClionaIntensityWholeOyster > 0, 1, 0)
 # ggplot(ShellPest2, aes(x=Infected)) + geom_histogram()
 
 ##### 1-Section ONLY as a fixed effect
-model.S <- glmmTMB(PolydoraIntensityWholeOyster ~ Section,
-                   ziformula = ~1,
-                   family = beta_family(link = "logit"),
-                   data = ShellPest2)
+model.S <- glmmTMB(ClionaIntensityWholeOyster ~ Section,
+      family = beta_family(link = "logit"),
+  ziformula = ~ 0,
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
 
 ##### 2-TotalWeight ONLY as a fixed effect 
-model.TW <- glmmTMB(PolydoraIntensityWholeOyster ~ TotalWeight_scaled,
-                   ziformula = ~1,
-                   family = beta_family(link = "logit"),
-                   data = ShellPest2)
+model.TW <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled,
+       family = beta_family(link = "logit"),
+  ziformula = ~ 0,
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
 
 ##### 3-ShellHeight ONLY as a fixed effect 
-model.SH <- glmmTMB(PolydoraIntensityWholeOyster ~ ShellHeight_scaled,
-                   ziformula = ~1,
-                   family = beta_family(link = "logit"),
-                   data = ShellPest2)
+model.SH <- glmmTMB(ClionaIntensityWholeOyster ~ ShellHeight_scaled,
+      family = beta_family(link = "logit"),
+  ziformula = ~ 0,
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
 
 ##### 4-Section AND TotalWeight as a fixed effect 
-model.S.TW <- glmmTMB(PolydoraIntensityWholeOyster ~ Section + TotalWeight_scaled,
-                   ziformula = ~1,
-                   family = beta_family(link = "logit"),
-                   data = ShellPest2)
+model.S.TW <- glmmTMB(ClionaIntensityWholeOyster ~ Section + TotalWeight_scaled,
+    family = beta_family(link = "logit"),
+  ziformula = ~ 0,
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
 
 ##### 5-Section AND ShellHeight as a fixed effect 
-model.S.SH <- glmmTMB(PolydoraIntensityWholeOyster ~ Section + ShellHeight_scaled,
-                   ziformula = ~1,
-                   family = beta_family(link = "logit"),
-                   data = ShellPest2)
+model.S.SH <- glmmTMB(ClionaIntensityWholeOyster ~ Section + ShellHeight_scaled,
+    family = beta_family(link = "logit"),
+  ziformula = ~ 0,
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
 
 ##### 6-TotalWeight AND ShellHeight as a fixed effect 
-model.TW.SH <- glmmTMB(PolydoraIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled,
-                   ziformula = ~1,
-                   family = beta_family(link = "logit"),
-                   data = ShellPest2)
+model.TW.SH <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled,
+    family = beta_family(link = "logit"),
+  ziformula = ~ 0,
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
 
 ##### 7-TotalWeight AND ShellHeight AND Section as a fixed effect 
-model.TW.SH.S <- glmmTMB(PolydoraIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section,
-                   ziformula = ~1,
-                   family = beta_family(link = "logit"),
-                   data = ShellPest2)
+model.TW.SH.S <- glmmTMB(
+  ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section,
+     family = beta_family(link = "logit"),
+  ziformula = ~ 0,
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
 
 ### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
 Intensity_models1 <- list(
@@ -325,10 +326,38 @@ Intensity_models1 <- list(
 
 aictab(Intensity_models1) #will use one for analysis
 
+# Key findings from model selection
+cat("=== Intensity: INITIAL MODEL SELECTION INSIGHTS === 
+      1. Section is highly important (1 >> 2 or 3 alone), TotalWeight is more important than ShellHeight (2 >> 3).
+      2. The best model includes all three effects (7 >> 4 or 5 or 6).
+      3. The best model fit involved subsetting the data to exclude oysters with no Cliona. Including cliona-free oysters caused issues with residuals due to the large number of zeros in the data.")
 
+######### Since 7-TotalWeight+SH+Section has a Massively better AICc, only it will be tested here
+best_model1 <- model.TW.SH.S
+#########
 
+cat('The following is Residual results, QQ Plot, R2, and Summary for the best fitting model ONLY: 
+    7-TotalWeight+SH+Section')
 
+##### Assess goodness-of-fit
+simulateResiduals(best_model1, n = 250, refit = FALSE, plot = TRUE)
 
+# Calculate R-squared equivalent for Intensity models. Closer to 1 is better
+r2(best_model1)
 
+##### Look at estimates
+summary(best_model1)
+
+# Key findings from Initial model 
+cat("=== Intensity: INITIAL MODEL INSIGHTS ===
+  ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section
+      1. Model fits the data alright with decent residuals. KS and disperison tests indicate fit issues, though this is common with large data sets.
+      2. R-squared of 0.104 indicates a weak predictive ability, meaning there's lots of room for improvement.
+      2. Larger oysters have more a higher intensity of cliona This makes sense and conforms to basic observations.
+      4. Counterintuitively, oysters with a greater shell height show slightly less cliona at a given weight.
+      3. There are statistically significant differences in the cliona intensity observed in the sections of the Bay.")
+
+# Remove unnecesssary models
+rm(model.S, model.S.SH, model.S.TW, model.SH, model.TW, model.TW.SH, model.TW.SH.S)
 
 ```
