@@ -250,7 +250,7 @@ ShellPest2 <- ShellPest1 %>% # getting everything that needs to be scaled
 ShellPest2$Infected <- ifelse(ShellPest2$ClionaIntensityWholeOyster > 0, 1, 0)
 
 # Remove unnecessary dataframes
-#rm(hsdbConditionIndex, hsdbShellPest, ShellPest, ShellPest1)
+rm(hsdbConditionIndex, hsdbShellPest, ShellPest, ShellPest1)
 
 ```
 
@@ -468,7 +468,7 @@ cat("=== Intensity: IMPROVED MODEL INSIGHTS ===
 
 # Remove unnecessary models
 
-#rm(model.TW.SH.S.Ss, model.TW.SH.S.Y, model.TW.SH.S.Y_s, model.TW.SH.S.Ss.Y, model.TW.SH.S.Ss.Y_s, model.TW.SH.S.Ss.X.Y_s)
+rm(model.TW.SH.S.Ss, model.TW.SH.S.Y, model.TW.SH.S.Y_s, model.TW.SH.S.Ss.Y, model.TW.SH.S.Ss.Y_s, model.TW.SH.S.Ss.X.Y_s)
 
 ```
 
@@ -573,3 +573,329 @@ cat(" |||||||||||||||||||||||||||| CONCLUSION ||||||||||||||||||||||||||||
 *** 4. Recommendation is to discontinue measuring cliona intensity in ShellPest data. ***")
 
 ```
+
+<br>~~~ Prevalence: Initial GLMM Models ~~~ <br>
+
+``` {r Prevalence: Initial GLMM Models}
+
+# Additional optimization options if convergence issues occur:
+# control = glmmTMBControl(
+#   optimizer = optim,
+#   optArgs = list(method = "BFGS"),
+#   start = list(theta = log(1)),  # Starting values for dispersion
+#   map = list(),  # Fix parameters if needed
+#   optCtrl = list(eval.max = 1000, iter.max = 1000)
+# )
+
+##### 1-Section ONLY as a fixed effect
+P.model.S <- glmmTMB(Infected ~ Section,
+                   family = binomial,
+                   data = ShellPest2,
+                   control = glmmTMBControl(optimizer = optim, 
+                                          optArgs = list(method = "BFGS")))
+
+##### 2-TotalWeight ONLY as a fixed effect 
+P.model.TW <- glmmTMB(Infected ~ TotalWeight_scaled,
+                   family = binomial,
+                   data = ShellPest2,
+                   control = glmmTMBControl(optimizer = optim, 
+                                          optArgs = list(method = "BFGS")))
+
+##### 3-Section AND ShellHeight as a fixed effect 
+P.model.SH <- glmmTMB(Infected ~ ShellHeight_scaled,
+                   family = binomial,
+                   data = ShellPest2,
+                   control = glmmTMBControl(optimizer = optim, 
+                                          optArgs = list(method = "BFGS")))
+
+##### 4-Section AND TotalWeight as a fixed effect 
+P.model.S.TW <- glmmTMB(Infected ~ Section + TotalWeight_scaled,
+                   family = binomial,
+                   data = ShellPest2,
+                   control = glmmTMBControl(optimizer = optim, 
+                                          optArgs = list(method = "BFGS")))
+
+##### 5-Section AND ShellHeight as a fixed effect 
+P.model.S.SH <- glmmTMB(Infected ~ Section + ShellHeight_scaled,
+                   family = binomial,
+                   data = ShellPest2,
+                   control = glmmTMBControl(optimizer = optim, 
+                                          optArgs = list(method = "BFGS")))
+
+##### 6-TotalWeight AND ShellHeight as a fixed effect 
+P.model.TW.SH <- glmmTMB(Infected ~ TotalWeight_scaled + ShellHeight_scaled,
+                   family = binomial,
+                   data = ShellPest2,
+                   control = glmmTMBControl(optimizer = optim, 
+                                          optArgs = list(method = "BFGS")))
+
+##### 7-TotalWeight AND ShellHeight AND Section as a fixed effect 
+P.model.TW.SH.S <- glmmTMB(Infected ~ TotalWeight_scaled + ShellHeight_scaled + Section,
+                   family = binomial,
+                   data = ShellPest2,
+                   control = glmmTMBControl(optimizer = optim, 
+                                          optArgs = list(method = "BFGS")))
+
+### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
+Prevalence_models1 <- list('1-SectionOnly' = P.model.S, 
+                 '2-TotalWeightOnly' = P.model.TW, 
+                 '3-ShellHeightOnly' = P.model.SH, 
+                 '4-Section+TotalWeight' = P.model.S.TW, 
+                 '5-Section+SH' = P.model.S.SH,
+                 '6-TotalWeight+SH' = P.model.TW.SH,
+                 '7-TotalWeight+SH+Section' = P.model.TW.SH.S)
+
+aictab(Prevalence_models1) #will use one for analysis
+
+# Key findings from model selection
+cat("=== Prevalence: INITIAL MODEL SELECTION INSIGHTS === 
+      1. Adding ShellHeight to Model #4 improved AICc slightly, with worse residuals, and no change to R2 value. Thus, preference for the simpler model means that #4 was chosen as the best model.
+      2. Section is highly important (1 >> 2 or 3)
+      3. Of the two, TotalWeight is more important than ShellHeight (2 > 3)")
+
+######### Since Section+TotalWeight has a Massively better AICc, only it will be tested here
+P.best_model1 <- P.model.S.TW
+#########
+
+##### Assess goodness-of-fit
+simulateResiduals(P.best_model1, n = 250, refit = FALSE, plot = TRUE)
+
+# Calculate R-squared equivalent for count models. Closer to 1 is better
+r2(P.best_model1)
+
+##### Look at estimates
+summary(P.best_model1)
+
+# Key findings from Initial model 
+cat("=== Prevalence: INITIAL MODEL INSIGHTS ===
+  Infected ~ Section + TotalWeight_scaled
+      1. Model fits the data pretty well with good residuals.
+      2. Tjur's R-squared is used here because Prevalence is a binary outcome. A value of 0.294 indicates a moderate ability to discriminate between the 2 outcomes. Thus, there's room for improvement.
+      3. Larger oysters have a higher prevalence. This makes sense and conforms to basic observations.
+      4. There are statistically significant differences in the prevalence of cliona infestation observed in the sections of the Bay.")
+
+# Remove unnecessay models
+rm(P.model.S, P.model.TW, P.model.SH, P.model.S.TW, P.model.S.SH, P.model.TW.SH, P.model.TW.SH.S)
+
+```
+
+
+<br>~~~ Prevalence: Improving Basic GLMM Models ~~~ <br>
+Adding Season and Year to best Initial model
+
+``` {r Prevalence: Improving Basic GLMM Models}
+# Extended model set: Adding Season and Year systematically
+
+##### 1-Baseline - Best model from above
+## Section AND TotalWeight as a fixed effect 
+# P.model.S.TW <- glmmTMB(Infected ~ Section + TotalWeight_scaled,
+#                    family = binomial,
+#                    data = ShellPest2,
+#                    control = glmmTMBControl(optimizer = optim, 
+#                                           optArgs = list(method = "BFGS")))
+
+# 2-Add Season (cyclical pattern)
+# Section AND TotalWeight AND Season as a fixed effect 
+P.model.S.TW.Ss <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season,
+                   family = binomial,
+                   data = ShellPest2,
+                   control = glmmTMBControl(optimizer = optim, 
+                                          optArgs = list(method = "BFGS")))
+
+# 3-Add Year as a factor (non-linear temporal trend)
+# Section AND TotalWeight AND Year as a fixed effect 
+P.model.S.TW.Y <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Year,
+                   family = binomial,
+                   data = ShellPest2,
+                   control = glmmTMBControl(optimizer = optim, 
+                                          optArgs = list(method = "BFGS")))
+
+# 4-Add Year as a linear trend (more parsimonious)
+# Section AND TotalWeight AND Year_scaled as a fixed effect 
+P.model.S.TW.Y_s <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Year_scaled,
+                   family = binomial,
+                   data = ShellPest2,
+                   control = glmmTMBControl(optimizer = optim, 
+                                          optArgs = list(method = "BFGS")))
+
+# 5-Add Season AND Year (factor)
+# Section AND TotalWeight AND Season AND Year as a fixed effect 
+P.model.S.TW.Ss.Y <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + Year,
+                   family = binomial,
+                   data = ShellPest2,
+                   control = glmmTMBControl(optimizer = optim, 
+                                          optArgs = list(method = "BFGS")))
+
+# 6-Add Season AND Year (linear)
+# Section AND TotalWeight AND Season AND Year_Scaled as a fixed effect 
+P.model.S.TW.Ss.Y_s <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + Year_scaled,
+                   family = binomial,
+                   data = ShellPest2,
+                   control = glmmTMBControl(optimizer = optim, 
+                                          optArgs = list(method = "BFGS")))
+
+
+# 7-Add Season-Year interaction (test if seasonal patterns change over years)
+# Section AND TotalWeight AND Season-Year_scaled interaction as a fixed effect 
+P.model.S.TW.Ss.X.Y_s <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season * Year_scaled,
+                   family = binomial,
+                   data = ShellPest2,
+                   control = glmmTMBControl(optimizer = optim, 
+                                          optArgs = list(method = "BFGS")))
+
+### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
+Prevalence_models2 <- list('1-SectionWeight (Base)' = P.best_model1, 
+                 '2-SectionWeight+Season' = P.model.S.TW.Ss, 
+                 '3-SectionWeight+Year' = P.model.S.TW.Y, 
+                 '4-SectionWeight+YearScaled' = P.model.S.TW.Y_s, 
+                 '5-SectionWeight+Season+Year' = P.model.S.TW.Ss.Y,
+                 '6-SectionWeight+Season+YearScaled' = P.model.S.TW.Ss.Y_s,
+                 '7-SectionWeight+Season * YearScaled' = P.model.S.TW.Ss.X.Y_s)
+
+aictab(Prevalence_models2) #will use one for analysis
+
+# Key findings from model selection
+cat("=== Prevalence: MODEL SELECTION INSIGHTS ===
+      1. Year is highly important (3 >> 5 or 2 alone)
+      2. Non-linear year effects are crucial (5 >> 6: factor vs linear year)
+      3. Seasonal patterns are consistent across years (5 >> 7: no interaction needed)
+      4. Temporal factors explain MASSIVE variation (ΔAICc = 216 vs baseline)")
+
+######### Since SSectionWeight+Year has a significantly better AICc, only it will be tested here
+P.best_model2 <- P.model.S.TW.Y
+#########
+
+
+##### Assess goodness-of-fit
+simulateResiduals(P.best_model2, n = 175, refit = FALSE, plot = TRUE)
+
+# Check for temporal autocorrelation since we have time series data
+acf(residuals(P.best_model2, type = "pearson"))
+# The residuals exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies. 
+
+# Calculate R-squared equivalent for count models. Closer to 1 is better
+r2(P.best_model2)
+
+##### Look at estimates
+summary(P.best_model2)
+
+# Key findings from Improved model 
+cat("=== Prevalence: IMPROVED MODEL INSIGHTS ===
+  Infected ~ Section + TotalWeight_scaled + Year
+      1. Model fits the data pretty well with good residuals and and R-squared even closer to 1 than the Initial model.
+      2. ACF series residuals series exhibit SIGNIFICANT autocorrelation, implying that the model has NOT captured the temporal dependencies. This is a major issue to resolve before any other insights can be drawn.")
+
+# Remove unnecessary models
+rm(P.model.S.TW.Ss, P.model.S.TW.Y, P.model.S.TW.Y_s, P.model.S.TW.Ss.Y, P.model.S.TW.Ss.Y_s, P.model.S.TW.Ss.X.Y_s)
+
+```
+
+
+<br>~~~ Prevalence: Bias Testing ~~~ <br>
+Examining the impact of observers and locations, as both have changed over the years
+
+``` {r Prevalence: Bias Testing}
+
+# BIAS TESTING MODELS
+
+##### 1-Baseline - Best model from above
+### Add Year as a factor (non-linear temporal trend)
+# # Section AND TotalWeight AND Year as a fixed effect 
+# P.model.S.TW.Y <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Year,
+#                    family = binomial,
+#                    data = ShellPest2,
+#                    control = glmmTMBControl(optimizer = optim, 
+#                                           optArgs = list(method = "BFGS")))
+
+
+
+
+# OBSERVER BIAS TESTING 
+# 2-Add ProcessedBy to prevalence model
+model.P_observer <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Year + ProcessedBy,
+                           family = binomial,
+                           data = ShellPest2,
+                           control = glmmTMBControl(optimizer = optim,
+                                                  optArgs = list(method = "BFGS")))
+
+
+# LOCATION BIAS TESTING
+# 3-Add FixedLocation as random effect (nested within Section) to prevalence model
+model.P_location <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Year + (1|FixedLocation),
+                           family = binomial,
+                           data = ShellPest2,
+                           control = glmmTMBControl(optimizer = optim,
+                                                  optArgs = list(method = "BFGS")))
+
+
+# COMBINED BIAS TESTING 
+# 4-Both observer and location effects on prevalence
+model.P_both <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Year + ProcessedBy + (1|FixedLocation),
+                       family = binomial,
+                       data = ShellPest2,
+                       control = glmmTMBControl(optimizer = optim,
+                                              optArgs = list(method = "BFGS")))
+
+### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
+# For COUNT models
+prevalence_bias_models <- list(
+  "Original" = P.best_model2,  # Your best Improved model
+  "Observer_Bias" = model.P_observer,
+  "Location_Bias" = model.P_location, 
+  "Both_Biases" = model.P_both
+)
+
+aictab(prevalence_bias_models)
+
+# Key findings from model selection
+cat("=== Prevalence: BIAS TESTING MODEL SELECTION INSIGHTS ===
+      1. Both Biases are present in Cliona prevalence data (ΔAICc = 905 vs baseline)
+      2. Location and Observer have a large impact on results")
+
+# simulateResiduals(model.P_observer, n = 250, refit = FALSE, plot = TRUE)
+# simulateResiduals(model.P_location, n = 250, refit = FALSE, plot = TRUE)
+simulateResiduals(model.P_both, n = 250, refit = FALSE, plot = TRUE)
+
+# Check for temporal autocorrelation since we have time series data
+acf(residuals(model.P_both, type = "pearson"))
+
+r2(model.P_both)
+
+summary(model.P_both)
+
+# Key findings from Bias testing model 
+cat("=== Prevalence: BIAS TESTING MODEL INSIGHTS ===
+  Infected ~ Section + TotalWeight_scaled + Year + ProcessedBy + (1|FixedLocation)
+      1. Model fits the data pretty well with good residuals and and R-squared MASSIVELY better than the Improved model. KS Test fail is expected with a large data set, and nothing looks wrong with the plot otherwise.
+      2. ACF series residuals series looks much better, exhibiting no significant autocorrelation, implying that the model has effectively captured the temporal dependencies.
+      3. The MASSIVE increase in model performance with both biases raise a lot of doubt about the Improved Model's insights. ")
+
+# Assign predictors of variance to see what has the most amount of influence in the bias model
+predictors.P <- c("Section", "TotalWeight_scaled", "Year", "ProcessedBy")
+
+# Uses Intraclass Correlation Coefficient (ICC) to quantify how much variation in your outcomeis attributable to Random effects
+cat("Intraclass Correlation Coefficient (ICC) quantifies how much variation is attributable to Random effects:")
+icc(model.P_both)
+
+# uses the importantance_table function to make a clean table detail each factor's importance in the final model
+importance_results.P <- importance_table(model.P_both, predictors.P) 
+kable(importance_results.P, format = "pipe", digits = 3)
+
+# Key findings from Bias Importance  
+cat("=== Prevalence: BIAS TESTING IMPORTANCE TABLE & ICC ===
+      1. Adjusted ICC indicates that after controliing for other factors, ~35% of the variance is attributable to the random effect of FixedLocation, which is substantial.
+      2. Large Positive ΔAIC indicates that TotalWeight and Processed by are extremely important predictors. 
+      3. Section and Year's low ΔAIC indicates they doesn't improve the model much.
+      4. TotalWeight and Processed by have very small p-values (e-55 and e-10), indicating they are highly significant.
+      5. Year is significant (p = 0.005).
+      6. Section is not significant (p = 0.53).
+      7. ΔR2 measures how much of the model’s explained variance is uniquely attributable to that predictor. TotalWeight explains ~4% on its own; ProcessedBy adds ~1.2%; Year and Season add less than 1%.")
+
+cat(" |||||||||||||||||||||||||||| CONCLUSION |||||||||||||||||||||||||||| 
+    1. TotalWeight is by far the strongest driver of cliona prevalence. Heavier oysters tend to have higher cliona prevalence.
+    2. Given the outsized impact of bias on this data, no other strong insights can be drawn without significant reprocessing, retraining, and robust QA measures being put in place. After which all these tests need to be run again and more detailed analysis run to determine any significant differences.
+    3. This solution represents a large input of staff time (thousands of hours) for a small amount of benefit.
+*** 4. Recommendation is to discontinue noting the presence or absence of cliona in ShellPest data. ***")
+
+```
+
