@@ -361,3 +361,113 @@ cat("=== Intensity: INITIAL MODEL INSIGHTS ===
 rm(model.S, model.S.SH, model.S.TW, model.SH, model.TW, model.TW.SH, model.TW.SH.S)
 
 ```
+
+<br>~~~ Intensity: Improving Basic GLMM Models ~~~ <br>
+Adding Season and Year to best Initial model
+
+``` {r Intensity: Improving Basic GLMM Models}
+# Extended model set: Adding Season and Year systematically
+
+##### 1-Baseline - Best model from above
+### TotalWeight AND ShellHeight AND Section as a fixed effect 
+# model.TW.SH.S <- glmmTMB(
+#   ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section,
+#      family = beta_family(link = "logit"),
+#   ziformula = ~ 0,
+#   data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+# 2-Add Season (cyclical pattern)
+# Section AND TotalWeight AND Season as a fixed effect 
+model.TW.SH.S.Ss <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season,
+                   family = beta_family(link = "logit"),
+  ziformula = ~ 0,
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+# 3-Add Year as a factor (non-linear temporal trend)
+# Section AND TotalWeight AND Year as a fixed effect 
+model.TW.SH.S.Y <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Year,
+                   family = beta_family(link = "logit"),
+  ziformula = ~ 0,
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+# 4-Add Year as a linear trend (more parsimonious)
+# Section AND TotalWeight AND Year_scaled as a fixed effect 
+model.TW.SH.S.Y_s <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Year_scaled,
+                   family = beta_family(link = "logit"),
+  ziformula = ~ 0,
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+# 5-Add Season AND Year (factor)
+# Section AND TotalWeight AND Season AND Year as a fixed effect 
+model.TW.SH.S.Ss.Y <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season + Year,
+                   family = beta_family(link = "logit"),
+  ziformula = ~ 0,
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+# 6-Add Season AND Year (linear)
+# Section AND TotalWeight AND Season AND Year_Scaled as a fixed effect 
+model.TW.SH.S.Ss.Y_s <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season + Year_scaled,
+                   family = beta_family(link = "logit"),
+  ziformula = ~ 0,
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+# 7-Add Season-Year interaction (test if seasonal patterns change over years)
+# Section AND TotalWeight AND Season-Year_scaled interaction as a fixed effect 
+model.TW.SH.S.Ss.X.Y_s <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season * Year_scaled,
+                   family = beta_family(link = "logit"),
+  ziformula = ~ 0,
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
+Intensity_models2 <- list('1-Section+TotalWeight+ShellHeight (Base)' = best_model1, 
+                 '2-SEC+TW+SH+Season' = model.TW.SH.S.Ss, 
+                 '3-SEC+TW+SH+Year' = model.TW.SH.S.Y, 
+                 '4-SEC+TW+SH+YearScaled' = model.TW.SH.S.Y_s, 
+                 '5-SEC+TW+SH+Season+Year' = model.TW.SH.S.Ss.Y,
+                 '6-SEC+TW+SH+Season+YearScaled' = model.TW.SH.S.Ss.Y_s,
+                 '7-SEC+TW+SH+Season*YearScaled' = model.TW.SH.S.Ss.X.Y_s
+)
+
+aictab(Intensity_models2) #will use one for analysis
+
+
+# Key findings from model selection
+cat("=== Counts: IMPROVED MODEL SELECTION INSIGHTS ===
+      1. Both Season AND Year are highly important (5 >> 2 or 3 alone)
+      2. Non-linear year effects are crucial (5 >> 6: factor vs linear year)
+      3. Seasonal patterns are consistent across years (5 >> 7: no interaction needed)
+      4. Temporal factors explain MASSIVE variation (ΔAICc = 141 vs baseline)")
+
+######### Since 5-SEC+TW+SH+Season+Year has a significantly better AICc, only it will be tested here
+best_model2 <- model.TW.SH.S.Ss.Y
+#########
+
+cat('Following is Residual results, QQ Plot, ACF series residuals, R2, and Summary for the best fitting model ONLY:   
+    5-SEC+WT+Season+Year')
+
+##### Assess goodness-of-fit
+simulateResiduals(best_model2, n = 175, refit = FALSE, plot = TRUE)
+
+# Check for temporal autocorrelation since we have time series data
+acf(residuals(best_model2, type = "pearson"))
+# The residuals exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies. 
+
+# Calculate R-squared equivalent for count models. Closer to 1 is better
+r2(best_model2)
+
+##### Look at estimates
+summary(best_model2)
+
+# Key findings from Improved model 
+cat("=== Intensity: IMPROVED MODEL INSIGHTS ===
+  ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season + Year
+      1. Model fits the data pretty well with good residuals and and an improved R-squared (0.155) than the Initial model. Thus there is still a good amount of unexpalined variability.
+      2. ACF series residuals series exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies.
+      3. Key insights about larger oysters and differences between sections still hold.
+      4. There appear to be some statistical differences between the Seasons and the Years. Closer inspection of those results to follow.")
+
+# Remove unnecessary models
+
+#rm(model.TW.SH.S.Ss, model.TW.SH.S.Y, model.TW.SH.S.Y_s, model.TW.SH.S.Ss.Y, model.TW.SH.S.Ss.Y_s, model.TW.SH.S.Ss.X.Y_s)
+
+```
