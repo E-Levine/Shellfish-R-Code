@@ -43,6 +43,7 @@ library(DHARMa)
 
 # From Claude
 library(performance)
+library(MuMIn)
 
 ```
 
@@ -261,50 +262,42 @@ ShellPest2$Infected <- ifelse(ShellPest2$TotalClamCount > 0, 1, 0)
 # ggplot(ShellPest2, aes(x=Infected)) + geom_histogram()
 
 cat("=== Counts: INITIAL MODEL COMMENTS === 
-      1. Basic data exploration showed that the best data distribution was a negative binomial with a zero-inflation term. 
-      2. NB without zero-inflation was tried, but the fit and residuals were worse, with little improvement to AIC")
+      1. Basic data exploration showed that the best data distribution was a negative binomial.")
 
 # Note that non-zero inflated maodels were tried, but the fit and residuals were worse, and little improvement to AIC
 
 ##### 1-Section ONLY as a fixed effect
 model.S <- glmmTMB(TotalClamCount ~ Section,
-                   ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
 ##### 2-TotalWeight ONLY as a fixed effect 
 model.TW <- glmmTMB(TotalClamCount ~ TotalWeight_scaled,
-                   ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
 ##### 3-ShellHeight ONLY as a fixed effect 
 model.SH <- glmmTMB(TotalClamCount ~ ShellHeight_scaled,
-                   ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
 ##### 4-Section AND TotalWeight as a fixed effect 
 model.S.TW <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled,
-                   ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
 ##### 5-Section AND ShellHeight as a fixed effect 
 model.S.SH <- glmmTMB(TotalClamCount ~ Section + ShellHeight_scaled,
-                   ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
 ##### 6-TotalWeight AND ShellHeight as a fixed effect 
 model.TW.SH <- glmmTMB(TotalClamCount ~ TotalWeight_scaled + ShellHeight_scaled,
-                   ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
 ##### 7-TotalWeight AND ShellHeight AND Section as a fixed effect 
 model.TW.SH.S <- glmmTMB(TotalClamCount ~ TotalWeight_scaled + ShellHeight_scaled + Section,
-                   ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
@@ -337,7 +330,7 @@ cat('The following is Residual results, QQ Plot, R2, and Summary for the best fi
 simulateResiduals(best_model1, n = 250, refit = FALSE, plot = TRUE)
 
 # Calculate R-squared equivalent for count models. Closer to 1 is better
-r2(best_model1)
+r.squaredGLMM(best_model1)
 
 ##### Look at estimates
 summary(best_model1)
@@ -345,8 +338,8 @@ summary(best_model1)
 # Key findings from Initial model 
 cat("=== Counts: INITIAL MODEL INSIGHTS ===
   TotalClamCount ~ Section + TotalWeight_scaled
-      1. Model fits the data pretty well with good residuals and and R-squared near 1.
-      2. Outlier test returns a significant deviation, but is expected with a large data set (4,345 observations), so we have room to improve this model.
+      1. Model fits the data moderately well with good residuals and delta r-squared of 0.26 indicates that 26% of the variance is explained by these effects.
+      2. Outlier and KS test returns a significant deviation, but is expected with a large data set (4,345 observations), so we have room to improve this model.
       3. Larger oysters have more clams. This makes sense and conforms to basic observations.
       4. There are statistically significant differences in the numbers of clams observed in the sections of the Bay.")
 
@@ -364,49 +357,42 @@ Adding Season and Year to best Initial model
 ##### 1-Baseline - Best model from above
 ### Section AND TotalWeight as a fixed effect 
 # model.S.TW <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled,
-#                    ziformula = ~1,
 #                    family = nbinom2(link = "log"),
 #                    data = ShellPest2)
 
 # 2-Add Season (cyclical pattern)
 # Section AND TotalWeight AND Season as a fixed effect 
 model.S.TW.Ss <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season,
-                   ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
 # 3-Add Year as a factor (non-linear temporal trend)
 # Section AND TotalWeight AND Year as a fixed effect 
 model.S.TW.Y <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Year,
-                   ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
 # 4-Add Year as a linear trend (more parsimonious)
 # Section AND TotalWeight AND Year_scaled as a fixed effect 
 model.S.TW.Y_s <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Year_scaled,
-                   ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
 # 5-Add Season AND Year (factor)
 # Section AND TotalWeight AND Season AND Year as a fixed effect 
 model.S.TW.Ss.Y <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year,
-                   ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
 # 6-Add Season AND Year (linear)
 # Section AND TotalWeight AND Season AND Year_Scaled as a fixed effect 
 model.S.TW.Ss.Y_s <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year_scaled,
-                   ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
 # 7-Add Season-Year interaction (test if seasonal patterns change over years)
 # Section AND TotalWeight AND Season-Year_scaled interaction as a fixed effect 
 model.S.TW.Ss.X.Y_s <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season * Year_scaled,
-                   ziformula = ~1,
                    family = nbinom2(link = "log"),
                    data = ShellPest2)
 
@@ -427,7 +413,7 @@ cat("=== Counts: IMPROVED MODEL SELECTION INSIGHTS ===
       1. Both Season AND Year are highly important (5 >> 2 or 3 alone)
       2. Non-linear year effects are crucial (5 >> 6: factor vs linear year)
       3. Seasonal patterns are consistent across years (5 >> 7: no interaction needed)
-      4. Temporal factors explain MASSIVE variation (ΔAICc = 99 vs baseline)")
+      4. Temporal factors explain MASSIVE variation (ΔAICc = 98 vs baseline)")
 
 ######### Since SectionWeight+Season+Year has a significantly better AICc, only it will be tested here
 best_model2 <- model.S.TW.Ss.Y
@@ -444,7 +430,7 @@ acf(residuals(best_model2, type = "pearson"))
 # The residuals exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies. 
 
 # Calculate R-squared equivalent for count models. Closer to 1 is better
-r2(best_model2)
+r.squaredGLMM(best_model2)
 
 ##### Look at estimates
 summary(best_model2)
@@ -452,7 +438,7 @@ summary(best_model2)
 # Key findings from Improved model 
 cat("=== Counts: IMPROVED MODEL INSIGHTS ===
   TotalClamCount ~ Section + TotalWeight_scaled + Season + Year
-      1. Model fits the data pretty well with good residuals and and R-squared even closer to 1 than the Initial model.
+      1. Model fits the data moderately well with good residuals and an improved R-squared (0.26 vs. 0.295), which indicates that still most of the variance is not explained.
       2. ACF series residuals series exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies.
       3. Key insights about larger oysters and differences between sections still hold.
       4. There appear to be some statistical differences between the Seasons and the Years. Closer inspection of those results to follow")
@@ -475,28 +461,24 @@ Examining the impact of observers and locations, as both have changed over the y
 ### Add Season AND Year (factor)
 # Section AND TotalWeight AND Season AND Year as a fixed effect 
 # model.S.TW.Ss.Y <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year,
-#                    ziformula = ~1,
 #                    family = nbinom2(link = "log"),
 #                    data = ShellPest2)
 
 # OBSERVER BIAS TESTING 
 # 2-Add ProcessedBy to count model
 model.count_observer <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year + (1|ProcessedBy),
-                            ziformula = ~ 1,
                             family = nbinom2(link = "log"),
                             data = ShellPest2)
 
 # LOCATION BIAS TESTING
 # 3-Add FixedLocation as random effect (nested within Section) to count model
 model.count_location <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year + (1|FixedLocation),
-                            ziformula = ~ 1,
                             family = nbinom2(link = "log"),
                             data = ShellPest2)
 
 # COMBINED BIAS TESTING 
 # 4-Both observer and location effects on counts
 model.count_both <- glmmTMB(TotalClamCount ~ Section + TotalWeight_scaled + Season + Year + (1|ProcessedBy) + (1|FixedLocation),
-                        ziformula = ~ 1,
                         family = nbinom2(link = "log"),
                         data = ShellPest2)
 
@@ -516,6 +498,9 @@ cat("=== Counts: BIAS TESTING MODEL SELECTION INSIGHTS ===
       1. Both Biases are present in Clam count data (ΔAICc = 723 vs baseline)
       2. Location and Observer have a large impact on results")
 
+cat('The following is Residual results, QQ Plot, R2, and Summary for the best fitting model ONLY: 
+    Both_Biases')
+
 # simulateResiduals(model.count_observer, n = 150, refit = FALSE, plot = TRUE)
 # simulateResiduals(model.count_location, n = 150, refit = FALSE, plot = TRUE)
 simulateResiduals(model.count_both, n = 150, refit = FALSE, plot = TRUE)
@@ -523,18 +508,17 @@ simulateResiduals(model.count_both, n = 150, refit = FALSE, plot = TRUE)
 # Check for temporal autocorrelation since we have time series data
 acf(residuals(model.count_both, type = "pearson"))
 
-# r2(model.count_observer)
-# r2(model.count_location)
-r2(model.count_both)
+r.squaredGLMM(model.count_both)
 
 summary(model.count_both)
 
 # Key findings from Bias testing model 
 cat("=== Counts: BIAS TESTING MODEL INSIGHTS ===
   TotalClamCount ~ Section + TotalWeight_scaled + Season + Year + (1|ProcessedBy) + (1|FixedLocation)
-      1. Model fits the data pretty well with good residuals and and R-squared even if it is slightly lower than the Improved model. KS Test fail is expected with a large data set, and nothing looks wrong with the plot otherwise.
-      2. ACF series residuals series exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies.
-      3. The MASSIVE increase in model performance with both biases raise a lot of doubt about the Improved Model's insights. ")
+      1. Model fits the data well with good residuals and an improved R-squared (0.584 vs. 0.295) indicating that ~38% of the variance (R2c - R2m) is explained by including the random effects.
+      2. Outlier and KS Test fail is expected with a large data set, and nothing looks wrong with the plot otherwise.
+      3. ACF series residuals series exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies.
+      4. The MASSIVE increase in model performance with both biases raise a lot of doubt about the Improved Model's insights. ")
 
 # Assign predictors of variance to see what has the most amount of influence in the bias model
 predictors <- c("Section", "TotalWeight_scaled", "Season", "Year")
@@ -654,6 +638,9 @@ cat("=== Prevalence: INITIAL MODEL SELECTION INSIGHTS ===
 P.best_model1 <- P.model.TW.SH.S
 #########
 
+cat('The following is Residual results, QQ Plot, R2, and Summary for the best fitting model ONLY: 
+    7-TotalWeight+SH+Section')
+
 ##### Assess goodness-of-fit
 simulateResiduals(P.best_model1, n = 250, refit = FALSE, plot = TRUE)
 
@@ -747,6 +734,9 @@ cat("=== Prevalence: MODEL SELECTION INSIGHTS ===
 P.best_model2 <- P.model.TW.SH.S.Ss.Y
 #########
 
+cat('The following is Residual results, QQ Plot, R2, and Summary for the best fitting model ONLY: 
+    5-SecWtSH+Season+Year')
+
 ##### Assess goodness-of-fit
 simulateResiduals(P.best_model2, n = 175, refit = FALSE, plot = TRUE)
 
@@ -824,6 +814,9 @@ aictab(prevalence_bias_models)
 cat("=== Prevalence: BIAS TESTING MODEL SELECTION INSIGHTS ===
       1. Both Biases are present in Clam prevalence data (ΔAICc = 499 vs baseline)
       2. Location and Observer have a large impact on results")
+
+cat('The following is Residual results, QQ Plot, R2, and Summary for the best fitting model ONLY: 
+    Both_Biases')
 
 # simulateResiduals(model.P_observer, n = 250, refit = FALSE, plot = TRUE)
 # simulateResiduals(model.P_location, n = 250, refit = FALSE, plot = TRUE)
