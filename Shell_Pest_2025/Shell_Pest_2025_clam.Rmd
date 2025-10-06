@@ -776,22 +776,17 @@ Examining the impact of observers and locations, as both have changed over the y
 #                    family = binomial,
 #                    data = ShellPest2)
 
-
-
-
 # OBSERVER BIAS TESTING 
 # 2-Add ProcessedBy to prevalence model
 model.P_observer <- glmmTMB(Infected ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season + Year + (1|ProcessedBy),
                            family = binomial,
                            data = ShellPest2)
 
-
 # LOCATION BIAS TESTING
 # 3-Add FixedLocation as random effect (nested within Section) to prevalence model
 model.P_location <- glmmTMB(Infected ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season + Year + (1|FixedLocation),
                            family = binomial,
                            data = ShellPest2)
-
 
 # COMBINED BIAS TESTING 
 # 4-Both observer and location effects on prevalence
@@ -823,7 +818,7 @@ cat('The following is Residual results, QQ Plot, R2, and Summary for the best fi
 simulateResiduals(model.P_both, n = 250, refit = FALSE, plot = TRUE)
 
 # Check for temporal autocorrelation since we have time series data
-acf(residuals(model.count_both, type = "pearson"))
+acf(residuals(model.P_both, type = "pearson"))
 
 # r2(model.P_observer)
 # r2(model.P_location)
@@ -845,9 +840,9 @@ predictors.P <- c("Section", "TotalWeight_scaled", "Season", "Year", "ShellHeigh
 vc <- VarCorr(model.P_both)
 
 # Extract variance components
-var_processed <- as.numeric(vc$cond$ProcessedBy)
-var_location  <- as.numeric(vc$cond$FixedLocation)
-var_resid     <- sigma(model.count_both)^2  # residual variance
+var_processed <- as.numeric(vc$cond$ProcessedBy)^2
+var_location  <- as.numeric(vc$cond$FixedLocation)^2
+var_resid     <- (pi^2) / 3  # residual variance
 
 # Total variance
 var_total <- var_processed + var_location + var_resid
@@ -866,14 +861,14 @@ kable(importance_results.P, format = "pipe", digits = 3)
 
 # Key findings from Bias Importance  
 cat("=== Prevalence: BIAS TESTING IMPORTANCE TABLE & ICC ===
-      1. Adjusted ICC indicates that after controling for other factors, ~52% of the variance is attributable to the random effect of ProcessedBy and 23% to FixedLocation, which is massive.
+      1. Adjusted ICC indicates that after controling for other factors, ~25% of the variance is attributable to the random effect of ProcessedBy and 5% to FixedLocation, which is a good amount
       2. The Check for Multicollinearity show that the model’s fixed effects are clean, independent, and interpretable. No red flags for collinearity.
       3. Large Positive ΔAIC indicates that TotalWeight and Processed by are extremely important predictors. 
-      4. Section's negative ΔAIC indicates it doesn't really improve the model.
-      5. TotalWeight have very small p-values (e-35), indicating it is highly significant.
-      6. Year and Season are both significant with very low p-values (e-9 and e-7), but far less than weight.
+      4. Section and ShellHeight's negative ΔAIC indicates they doesn't really improve the model.
+      5. TotalWeight have very small p-values indicating it is highly significant.
+      6. Year and Season are both significant with very low p-values, but far less than weight.
       7. ShellHeight and Section are not significant (p = 0.32 and p = 0.64).
-      8. ΔR2 measures how much of the model’s explained variance is uniquely attributable to that predictor. TotalWeight explains ~3% on its own; Year and Season add less than 1% each; ShellHeight and Section contribute virtually nothing.")
+      8. ΔR2 measures how much of the model’s explained variance is uniquely attributable to that predictor. TotalWeight explains ~2.5% on its own; Year and Season add less than 1% each; ShellHeight and Section contribute virtually nothing.")
 
 cat(" |||||||||||||||||||||||||||| CONCLUSION |||||||||||||||||||||||||||| 
     1. TotalWeight is by far the strongest driver of clam prevalence. Heavier oysters tend to have more clams.
