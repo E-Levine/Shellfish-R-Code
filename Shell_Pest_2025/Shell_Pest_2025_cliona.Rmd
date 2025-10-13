@@ -270,10 +270,12 @@ rm(hsdbConditionIndex, hsdbShellPest, ShellPest, ShellPest1)
 
 # Data exploration to see what distribution to use
 # ggplot(ShellPest2, aes(x=ClionaIntensityWholeOyster)) + geom_histogram()
-# ggplot(ShellPest2, aes(x=Infected)) + geom_histogram()
+# clionaplot <- ggplot(ShellPest2, aes(x=Infected)) + geom_histogram()
 
 cat("=== Counts: INITIAL MODEL COMMENTS === 
-      1. Basic data exploration showed that the best data distribution was a beta_family which subsets only non-zero data.")
+      1. Basic data exploration showed that the best data distribution was a Beta distribution (continuous probability distributions defined on the interval [0, 1]) which subsets only non-zero data.
+      2. Thus this analysis examines only the 57% of individuals with some level of cliona infestation.
+      3. The analysis of those infected or not is captured in the Prevalence section below.")
 
 ##### 1-Section ONLY as a fixed effect
 model.S <- glmmTMB(ClionaIntensityWholeOyster ~ Section,
@@ -283,7 +285,7 @@ model.S <- glmmTMB(ClionaIntensityWholeOyster ~ Section,
 ##### 2-TotalWeight ONLY as a fixed effect 
 model.TW <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled,
        family = beta_family(link = "logit"),
-  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+   data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
 
 ##### 3-ShellHeight ONLY as a fixed effect 
 model.SH <- glmmTMB(ClionaIntensityWholeOyster ~ ShellHeight_scaled,
@@ -350,9 +352,9 @@ cat("=== Intensity: INITIAL MODEL INSIGHTS ===
   ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section
       1. Model fits the data alright with decent residuals. KS and disperison tests indicate fit issues, though this is common with large data sets.
       2. R-squared of 0.103 indicates a weak predictive ability, meaning there's lots of room for improvement.
-      2. Larger oysters have more a higher intensity of cliona This makes sense and conforms to basic observations.
+      3. Larger oysters have more a higher intensity of cliona This makes sense and conforms to basic observations.
       4. Counterintuitively, oysters with a greater shell height show slightly less cliona at a given weight.
-      3. There are statistically significant differences in the cliona intensity observed in the sections of the Bay.")
+      5. There are statistically significant differences in the cliona intensity observed in the sections of the Bay.")
 
 # Remove unnecesssary models
 rm(model.S, model.S.SH, model.S.TW, model.SH, model.TW, model.TW.SH, model.TW.SH.S)
@@ -436,7 +438,7 @@ cat('Following is Residual results, QQ Plot, ACF series residuals, R2, and Summa
     5-SEC+WT+Season+Year')
 
 ##### Assess goodness-of-fit
-simulateResiduals(best_model2, n = 175, refit = FALSE, plot = TRUE)
+simulateResiduals(best_model2, n = 250, refit = FALSE, plot = TRUE)
 
 # Check for temporal autocorrelation since we have time series data
 acf(residuals(best_model2, type = "pearson"))
@@ -451,7 +453,7 @@ summary(best_model2)
 # Key findings from Improved model 
 cat("=== Intensity: IMPROVED MODEL INSIGHTS ===
   ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season + Year
-      1. Model fits the data pretty well with good residuals and and an improved R-squared (0.151) than the Initial model. Thus there is still a good amount of unexpalined variability.
+      1. Model fits the data pretty well with good residuals and and an improved R-squared (0.151 vs. 0.103) than the Initial model. Thus there is still a good amount of unexpalined variability.
       2. ACF series residuals series exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies.
       3. Key insights about larger oysters and differences between sections still hold.
       4. There appear to be some statistical differences between the Seasons and the Years. Closer inspection of those results to follow.")
@@ -515,7 +517,7 @@ cat('The following is Residual results, QQ Plot, R2, and Summary for the best fi
 
 # simulateResiduals(model.Intensity_observer, n = 150, refit = FALSE, plot = TRUE)
 # simulateResiduals(model.Intensity_location, n = 150, refit = FALSE, plot = TRUE)
-simulateResiduals(model.Intensity_both, n = 150, refit = FALSE, plot = TRUE)
+simulateResiduals(model.Intensity_both, n = 250, refit = FALSE, plot = TRUE)
 
 # Check for temporal autocorrelation since we have time series data
 acf(residuals(model.Intensity_both, type = "pearson"))
@@ -530,7 +532,7 @@ summary(model.Intensity_both)
 cat("=== Intensity: BIAS TESTING MODEL INSIGHTS ===
   ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season + Year + ProcessedBy + (1|FixedLocation)
       1. Model fits the data well with good residuals and a Conditional R-squared much higher than the Improved model (0.329 vs. 0.151). 
-      2. KS Test and Dispersion fail as expected with a large data set, and nothing looks wrong with the plot otherwise.
+      2. KS Test fails as expected with a large data set, and nothing looks wrong with the plot otherwise.
       3. ACF series residuals series exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies.
       4. The MASSIVE increase in model performance with both biases raise a lot of doubt about the Improved Model's insights. ")
 
@@ -565,8 +567,8 @@ kable(importance_results, format = "pipe", digits = 3)
 
 # Key findings from Bias Importance  
 cat("=== Intensity: BIAS TESTING IMPORTANCE TABLE & ICC ===
-      1. Adjusted ICC indicates that after controling for other factors, ~23% of the variance is attributable to the random effects. Thus it is not the main driver of variation but it is meaningful.
-      2. The small percent of total variance contributed by the random effects is an artifact of the Beta model and doesn't fully represent the importance of these effects. More important is the overall better fit (AIC) and conditional R-squarde. 
+      1. Adjusted ICC indicates that after controling for other factors, ~23% of the variance is attributable to the random effects. Thus it is not the main driver of total variation but it is meaningful, and much more than the fixed effects.
+      2. The small percent of total variance contributed by the random effects is an artifact of the Beta model and doesn't fully represent the importance of these effects. More important is the overall better fit (AIC) and an improved conditional R-squared (0.329 vs. 0.151). 
       3. Large Positive ΔAIC indicates that TotalWeight and Season are important predictors. 
       4. Section's negative ΔAIC indicates it doesn't really improve the model.
       5. TotalWeight and Season by have very small p-values, indicating they are highly significant.
@@ -772,7 +774,7 @@ summary(P.best_model2)
 # Key findings from Improved model 
 cat("=== Prevalence: IMPROVED MODEL INSIGHTS ===
   Infected ~ Section + TotalWeight_scaled + Year
-      1. Model fits the data pretty well with good residuals and and R-squared even closer to 1 than the Initial model.
+      1. Model fits the data pretty well with good residuals and a slightly improved R-squared (0.333 vs. 0.294).
       2. ACF series residuals series exhibit SIGNIFICANT autocorrelation, implying that the model has NOT captured the temporal dependencies. This is a major issue to resolve before any other insights can be drawn.")
 
 # Remove unnecessary models
@@ -846,8 +848,9 @@ summary(model.P_both)
 # Key findings from Bias testing model 
 cat("=== Prevalence: BIAS TESTING MODEL INSIGHTS ===
   Infected ~ Section + TotalWeight_scaled + Year + ProcessedBy + (1|FixedLocation)
-      1. Model fits the data pretty well with good residuals and and R-squared MASSIVELY better than the Improved model. KS Test fail is expected with a large data set, and nothing looks wrong with the plot otherwise.
+      1. Model fits the data pretty well with good residuals and and R-squared much better than the Improved model (0.499 vs. 0.333). KS Test fail is expected with a large data set, and nothing looks wrong with the plot otherwise.
       2. ACF series residuals series looks much better, exhibiting no significant autocorrelation, implying that the model has effectively captured the temporal dependencies.
+      3. Much of the differences between sections and years is no longer significant, which may be an artifact of the biases.
       3. The MASSIVE increase in model performance with both biases raise a lot of doubt about the Improved Model's insights. ")
 
 # Assign predictors of variance to see what has the most amount of influence in the bias model
@@ -882,7 +885,7 @@ kable(importance_results.P, format = "pipe", digits = 3)
 
 # Key findings from Bias Importance  
 cat("=== Prevalence: BIAS TESTING IMPORTANCE TABLE & ICC ===
-      1. Adjusted ICC indicates that after controliing for other factors, ~61% of the variance is attributable to the random effect of FixedLocation and 4% to ProcessedBy, which is substantial.
+      1. Adjusted ICC indicates that after controling for other factors, ~61% of the variance is attributable to the random effect of FixedLocation and 4% to ProcessedBy, which is substantial.
       2. The Check for Multicollinearity show that the model’s fixed effects are clean, independent, and interpretable. No red flags for collinearity.
       3. Large Positive ΔAIC indicates that TotalWeight is an extremely important predictor. 
       4. Section and Year's low ΔAIC indicates they doesn't improve the model much.

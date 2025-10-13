@@ -27,6 +27,7 @@ library(car)
 
 #chatGPT
 library(gridExtra)
+library(multcomp)
 library(multcompView)
 
 # From Sarah/Colin's CI GamaAnalysis
@@ -172,20 +173,7 @@ ShellPest <- hsdbShellPest %>%
           month(Date) >= 10 & month(Date) <= 12 ~ "Fall",
           TRUE ~ "Invalid")) %>%
   left_join(hsdbConditionIndex, by = c("OysterID")) %>%
-  filter(Year < 2022) %>%
-  select(OysterID,
-         PhotoSurface,
-         TotalArea,
-         PolydoraArea,
-         Section,
-         FixedLocation,
-         Date,
-         Month,
-         Year,
-         Season,
-         ProcessedBy,
-         ShellHeight,
-         TotalWeight) 
+  filter(Year < 2022) 
 
 # Adjust to provide the sum values needed for calculations
 ShellPest1 <- ShellPest %>%
@@ -272,7 +260,8 @@ rm(hsdbConditionIndex, hsdbShellPest, ShellPest, ShellPest1)
 # ggplot(ShellPest2, aes(x=Infected)) + geom_histogram()
 
 cat("=== Counts: INITIAL MODEL COMMENTS === 
-      1. Basic data exploration showed that the best data distribution was a beta_family which subsets only non-zero data.")
+      1. Basic data exploration showed that the best data distribution was a Beta distribution (continuous probability distributions defined on the interval [0, 1]) which subsets only non-zero data.
+      2. Thus this analysis examines only the 98% of individuals with some level of polydora infestation.")
 
 ##### 1-Section ONLY as a fixed effect
 model.S <- glmmTMB(PolydoraIntensityWholeOyster ~ Section,
@@ -403,6 +392,12 @@ model.S.SH.Ss.X.Y_s <- glmmTMB(PolydoraIntensityWholeOyster ~ Section + ShellHei
                    family = beta_family(link = "logit"),
                    data = subset(ShellPest2, PolydoraIntensityWholeOyster > 0))
 
+# 8-Add Season-Year interaction (test if seasonal patterns change over years)
+# Section AND TotalWeight AND Season-Year (non-linear) interaction as a fixed effect 
+model.S.SH.Ss.X.Y <- glmmTMB(PolydoraIntensityWholeOyster ~ Section + ShellHeight_scaled + Season * Year,
+                   family = beta_family(link = "logit"),
+                   data = subset(ShellPest2, PolydoraIntensityWholeOyster > 0))
+
 ### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
 Intensity_models2 <- list('1-Section+ShellHeight (Base)' = best_model1, 
                  '2-SEC+SH+Season' = model.S.SH.Ss, 
@@ -410,7 +405,8 @@ Intensity_models2 <- list('1-Section+ShellHeight (Base)' = best_model1,
                  '4-SEC+SH+YearScaled' = model.S.SH.Y_s, 
                  '5-SEC+SH+Season+Year' = model.S.SH.Ss.Y,
                  '6-SEC+SH+Season+YearScaled' = model.S.SH.Ss.Y_s,
-                 '7-SEC+SH+Season*YearScaled' = model.S.SH.Ss.X.Y_s
+                 '7-SEC+SH+Season*YearScaled' = model.S.SH.Ss.X.Y_s,
+                 '8-SEC+SH+Season*Year' = model.S.SH.Ss.X.Y
 )
 
 aictab(Intensity_models2) #will use one for analysis
@@ -418,16 +414,17 @@ aictab(Intensity_models2) #will use one for analysis
 # Key findings from model selection
 cat("=== Intensity: IMPROVED MODEL SELECTION INSIGHTS ===
       1. Seasonal patterns are not consistent across years (7 >> 5: interaction needed)
+      2. Non-linear year and season interactions work better than other combinations (8 >> 7).
       2. Both Season AND Year are highly important (5 >> 2 or 3 alone)
       3. Non-linear year effects are crucial (5 >> 6: factor vs linear year)
-      4. Temporal factors explain MASSIVE variation (ΔAICc = 605 vs baseline)")
+      4. Temporal factors explain MASSIVE variation (ΔAICc = 780 vs baseline)")
 
 ######### Since 7-SEC+SH+Season*YearScaled has a significantly better AICc, only it will be tested here
-best_model2 <- model.S.SH.Ss.X.Y_s
+best_model2 <- model.S.SH.Ss.X.Y
 #########
 
 cat('Following is Residual results, QQ Plot, ACF series residuals, R2, and Summary for the best fitting model ONLY:
-    7-SEC+SH+Season*YearScaled')
+    8-SEC+SH+Season*Year')
 
 ##### Assess goodness-of-fit
 simulateResiduals(best_model2, n = 250, refit = FALSE, plot = TRUE)
@@ -445,8 +442,8 @@ summary(best_model2)
 # Key findings from Improved model 
 cat("=== Intensity: IMPROVED MODEL INSIGHTS ===
   PolydoraIntensityWholeOyster ~ Section + ShellHeight_scaled + Season * Year_scaled
-      1. Model fits the data well with good residuals, though outlier test fails.
-      2. R-squared improved (0.333) though still not very predictive.
+      1. Model fits the data well with good residuals, though KS test fails.
+      2. R-squared improved (0.371 vs. 0.24) though still not highly predictive.
       3. ACF series residuals series exhibit SIGNIFICANT autocorrelation, implying that the model has NOT captured the temporal dependencies. This is a major issue to resolve before any other insights can be drawn.")
 
 # Remove unnecessary models
@@ -462,26 +459,26 @@ rm(model.S.SH.Ss, model.S.SH.Y, model.S.SH.Y_s, model.S.SH.Ss.Y, model.S.SH.Ss.Y
 
 ##### 1-Baseline - Best model from above
 ### Add Season-Year interaction (test if seasonal patterns change over years)
-# # Section AND TotalWeight AND Season-Year_scaled interaction as a fixed effect 
-# model.S.SH.Ss.X.Y_s <- glmmTMB(PolydoraIntensityWholeOyster ~ Section + ShellHeight_scaled + Season * Year_scaled,
+# # Section AND TotalWeight AND Season-Year (non-linear) interaction as a fixed effect 
+# model.S.SH.Ss.X.Y_s <- glmmTMB(PolydoraIntensityWholeOyster ~ Section + ShellHeight_scaled + Season * Year,
 #                   family = beta_family(link = "logit"),
 #                   data = subset(ShellPest2, PolydoraIntensityWholeOyster > 0))
 
 # OBSERVER BIAS TESTING 
 # 2-Add ProcessedBy to Intensity model
-model.Intensity_observer <- glmmTMB(PolydoraIntensityWholeOyster ~ Section + ShellHeight_scaled + Season * Year_scaled + (1|ProcessedBy),
+model.Intensity_observer <- glmmTMB(PolydoraIntensityWholeOyster ~ Section + ShellHeight_scaled + Season * Year + (1|ProcessedBy),
                    family = beta_family(link = "logit"),
                    data = subset(ShellPest2, PolydoraIntensityWholeOyster > 0))
 
 # LOCATION BIAS TESTING
 # 3-Add FixedLocation as random effect (nested within Section) to Intensity model
-model.Intensity_location <- glmmTMB(PolydoraIntensityWholeOyster ~ Section + ShellHeight_scaled + Season * Year_scaled + (1|FixedLocation),
+model.Intensity_location <- glmmTMB(PolydoraIntensityWholeOyster ~ Section + ShellHeight_scaled + Season * Year + (1|FixedLocation),
                    family = beta_family(link = "logit"),
                    data = subset(ShellPest2, PolydoraIntensityWholeOyster > 0))
 
 # COMBINED BIAS TESTING 
 # 4-Both observer and location effects on Intensity
-model.Intensity_both <- glmmTMB(PolydoraIntensityWholeOyster ~ Section + ShellHeight_scaled + Season * Year_scaled + (1|ProcessedBy) + (1|FixedLocation),
+model.Intensity_both <- glmmTMB(PolydoraIntensityWholeOyster ~ Section + ShellHeight_scaled + Season * Year + (1|ProcessedBy) + (1|FixedLocation),
                    family = beta_family(link = "logit"),
                    data = subset(ShellPest2, PolydoraIntensityWholeOyster > 0))
 
@@ -498,12 +495,12 @@ aictab(Intensity_bias_models)
 
 # Key findings from model selection
 cat("=== Intensity: BIAS TESTING MODEL SELECTION INSIGHTS ===
-      1. Both Biases are present in Polydora Intensity data (ΔAICc = 879 vs baseline)
+      1. Both Biases are present in Polydora Intensity data (ΔAICc = 849 vs baseline)
       2. Location and Observer have a MASSIVE impact on results")
 
 # simulateResiduals(model.Intensity_observer, n = 150, refit = FALSE, plot = TRUE)
 # simulateResiduals(model.Intensity_location, n = 150, refit = FALSE, plot = TRUE)
-simulateResiduals(model.Intensity_both, n = 150, refit = FALSE, plot = TRUE)
+simulateResiduals(model.Intensity_both, n = 250, refit = FALSE, plot = TRUE)
 
 # Check for temporal autocorrelation since we have time series data
 acf(residuals(model.Intensity_both, type = "pearson"))
@@ -516,10 +513,10 @@ summary(model.Intensity_both)
 
 # Key findings from Bias testing model 
 cat("=== Intensity: BIAS TESTING MODEL INSIGHTS ===
-  PolydoraIntensityWholeOyster ~ Section + ShellHeight_scaled + Season * Year_scaled + ProcessedBy + (1|FixedLocation)
-      1. Model fits the data pretty well. KS Test fail is expected with a large data set, and given the heavy tails, boundary effects and biases, it's not surprising that KS and outlier tests flag issues.
+  PolydoraIntensityWholeOyster ~ Section + ShellHeight_scaled + Season * Year + ProcessedBy + (1|FixedLocation)
+      1. Model fits the data pretty well. KS Test fail is expected with a large data set, and given the heavy tails, boundary effects and biases, it's not surprising that KS test flags issues.
       2. ACF series residuals series improved, implying that biases were driving the temporal signals, and once controlled for those signals have disappeared. 
-      3. Conditional R-squared much higher than the Improved model (0.502 vs. 0.333).
+      3. Conditional R-squared much higher than the Improved model (0.52 vs. 0.37).
       4. The MASSIVE increase in model performance with both biases raise a lot of doubt about the Improved Model's insights. ")
 
 # Assign predictors of variance to see what has the most amount of influence in the bias model
@@ -545,20 +542,57 @@ cat("Intraclass Correlation Coefficient (ICC) quantifies how much variation is a
 
 check_collinearity(model.Intensity_both)
 
+########
+# Producing a compact plot of estimated means to examine trends over time
+
+emm_both <- emmeans(model.Intensity_both, ~ Season * Year, type = "response")
+#summary(emm_both)
+
+# Get Tukey-adjusted compact letter display
+emm_cld <- cld(
+  emm_both,
+  adjust = "tukey",
+  Letters = letters,
+  type = "response",
+  alpha = 0.05
+)
+
+# Inspect the table
+emm_cld
+
+ggplot(emm_cld, aes(x = Season, y = response, color = Season)) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = asymp.LCL, ymax = asymp.UCL), width = 0.15) +
+  geom_text(aes(label = .group), vjust = -1, size = 3.5) +
+  facet_wrap(~ Year, ncol = 4) +
+  labs(
+    title = "Predicted Polydora Intensity by Season and Year",
+    x = "Season",
+    y = "Predicted Infection Intensity (proportion)",
+    color = "Season"
+  ) +
+  theme_minimal(base_size = 13) +
+  theme(
+    strip.text = element_text(face = "bold"),
+    legend.position = "none"
+  )
+##########
+
 # uses the importantance_table function to make a clean table detail each factor's importance in the final model
 importance_results <- importance_table(model.Intensity_both, predictors) 
 kable(importance_results, format = "pipe", digits = 3)
 
 # Key findings from Bias Importance  
 cat("=== Intensity: BIAS TESTING IMPORTANCE TABLE & ICC ===
-      1. Adjusted ICC indicates that after controliing for other factors, ~3% of the variance is attributable to the random effects.
-      2. The small percent of total variance contributed by the random effects is an artifact of the Beta model and doesn't fully represent the importance of these effects. More important is the overall better fit (AIC) and conditional R-squared. 
-      3. No effects appear to be collinear with each other.
-      4. Large Positive ΔAIC indicates that ShellHeight is an extremely important predictor. 
-      5. Section's negative ΔAIC indicates it doesn't really improve the model.
-      6. ShellHeight and Season*Year have very small p-values indicating they are highly significant.
-      7. Section is not significant (p = 0.301).
-      8. ΔR2 measures how much of the model’s explained variance is uniquely attributable to that predictor. ShellHeight explains ~7% on its own; Season*Year adds ~2%; Section contributes virtually nothing.")
+      1. Conditional - Marginal R2 indicates that after controling for other factors, ~29% of the variance is attributable to the random effects.
+      2. The small percent of total variance contributed by the random effects is an artifact of the Beta model and doesn't fully represent the importance of each effect. More important is the overall better fit (AIC) and conditional R-squared. 
+      3. Year and season effects appear to be collinear with each other. However, this may be a structural consequence of how Season*Year is defined. Since these effects aren't collinear with the other fixed effects we will ignore the collinearity for now.
+      4. Summary table and plots of intensity by season and year suggest there may be seasonal patterns and yearly differences. However, the differences may not be biologically meaningful (statistically significant, but not important to the organism), and may still be an artifact of bias. Especially the huge increase in Fall 2021. 
+      5. Large Positive ΔAIC indicates that ShellHeight is an extremely important predictor. 
+      6. Section's negative ΔAIC indicates it doesn't really improve the model.
+      7. ShellHeight and Season*Year have very small p-values indicating they are highly significant.
+      8. Section is not significant (p = 0.35).
+      9. ΔR2 measures how much of the model’s explained variance is uniquely attributable to that predictor. ShellHeight explains ~8% on its own; Season*Year adds ~5%; Section contributes virtually nothing.")
 
 cat(" |||||||||||||||||||||||||||| CONCLUSION |||||||||||||||||||||||||||| 
     1. Shell Height is by far the strongest driver of polydora intensity. Larger oysters tend to have more intense polydora.

@@ -413,7 +413,7 @@ cat("=== Counts: IMPROVED MODEL SELECTION INSIGHTS ===
       1. Both Season AND Year are highly important (5 >> 2 or 3 alone)
       2. Non-linear year effects are crucial (5 >> 6: factor vs linear year)
       3. Seasonal patterns are consistent across years (5 >> 7: no interaction needed)
-      4. Temporal factors explain MASSIVE variation (ΔAICc = 98 vs baseline)")
+      4. Temporal factors explain MASSIVE variation (ΔAICc = 99 vs baseline)")
 
 ######### Since SectionWeight+Season+Year has a significantly better AICc, only it will be tested here
 best_model2 <- model.S.TW.Ss.Y
@@ -423,7 +423,7 @@ cat('Following is Residual results, QQ Plot, ACF series residuals, R2, and Summa
     5-SEC+WT+Season+Year')
 
 ##### Assess goodness-of-fit
-simulateResiduals(best_model2, n = 175, refit = FALSE, plot = TRUE)
+simulateResiduals(best_model2, n = 250, refit = FALSE, plot = TRUE)
 
 # Check for temporal autocorrelation since we have time series data
 acf(residuals(best_model2, type = "pearson"))
@@ -503,7 +503,7 @@ cat('The following is Residual results, QQ Plot, R2, and Summary for the best fi
 
 # simulateResiduals(model.count_observer, n = 150, refit = FALSE, plot = TRUE)
 # simulateResiduals(model.count_location, n = 150, refit = FALSE, plot = TRUE)
-simulateResiduals(model.count_both, n = 150, refit = FALSE, plot = TRUE)
+simulateResiduals(model.count_both, n = 250, refit = FALSE, plot = TRUE)
 
 # Check for temporal autocorrelation since we have time series data
 acf(residuals(model.count_both, type = "pearson"))
