@@ -1,0 +1,903 @@
+---
+title: "Shell_Pest_2025_Cliona"
+output: html_document
+---
+`r Sys.Date()`
+
+### To make things cleaner this is only code for Cliona Intensity and Prevalence. Clams and Polydora will be addressed in separate scripts.  
+
+```{r VariableSet, echo = FALSE, warning = FALSE, message = FALSE}
+# Set your variables
+Estuaries <- c("AB") # Limits to only Apalachicola Bay
+Database = "OysterLocalMD20250930"  # Set the local database to use
+Server = "localhost\\LOCALSQL" # Set the local Server to use
+```
+
+```{r PackageLoad, echo = FALSE, warning = FALSE, message = FALSE}
+# Load necessary R packages
+library(tidyverse)
+library(odbc)
+library(DBI)
+library(dbplyr)
+library(lubridate)
+library(knitr)
+library(openxlsx)
+library(car)
+
+#chatGPT
+library(gridExtra)
+library(multcompView)
+
+# From Sarah/Colin's CI GamaAnalysis
+library(Matrix)
+library(glmmTMB)
+library(DHARMa)
+library(emmeans)
+library(AICcmodavg)
+library(ggplot2)
+library(dplyr)
+library(cowplot)
+library(ggridges)
+library(ggh4x)
+library(DHARMa)
+
+# From Claude
+library(performance)
+library(MuMIn)
+
+```
+
+```{r ConfigureChunks, warning=FALSE, include=FALSE}
+# Configure chunks
+knitr::opts_chunk$set(
+	echo = FALSE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+```{r Functions}
+
+# Function for creating a nuce table for Bias Testing
+importance_table <- function(full_model, predictors) {
+  # intercept-only null model
+  null_mod <- update(full_model, . ~ 1)
+  
+  # Full model pseudo-R²
+  pseudoR2 <- function(model, null_model = NULL) {
+    ll_full <- as.numeric(logLik(model))
+    if (is.null(null_model)) {
+      null_model <- update(model, . ~ 1)
+    }
+    ll_null <- as.numeric(logLik(null_model))
+    1 - (ll_full / ll_null)
+  }
+  R2_full <- pseudoR2(full_model, null_mod)
+  
+  # Function for each predictor
+  drop_one_safe <- function(var, full) {
+    # reduced model
+    reduced <- tryCatch(
+      update(full, as.formula(paste(". ~ . -", var))),
+      error = function(e) NULL,
+      warning = function(w) {invokeRestart("muffleWarning")}
+    )
+    if (is.null(reduced)) {
+      return(data.frame(
+        Predictor = var,
+        deltaAIC = NA, LRT = NA, df_diff = NA, p_value = NA,
+        R2_full = R2_full, R2_reduced = NA, deltaR2 = NA,
+        stringsAsFactors = FALSE
+      ))
+    }
+    
+    # logLik + AIC
+    ll_full <- as.numeric(logLik(full))
+    ll_red  <- as.numeric(logLik(reduced))
+    aic_full <- AIC(full)
+    aic_red  <- AIC(reduced)
+    deltaAIC <- aic_red - aic_full
+    
+    # parameter df
+    df_full <- attr(logLik(full), "df")
+    df_red  <- attr(logLik(reduced), "df")
+    if (is.null(df_full)) df_full <- length(coef(full)$cond)
+    if (is.null(df_red))  df_red  <- length(coef(reduced)$cond)
+    
+    df_diff <- as.integer(round(df_full - df_red))
+    LRT <- 2 * (ll_full - ll_red)
+    p_value <- if (!is.na(df_diff) && df_diff > 0) {
+      pchisq(LRT, df = df_diff, lower.tail = FALSE)
+    } else {
+      NA_real_
+    }
+    
+    # pseudo R²
+    R2_reduced <- pseudoR2(reduced, null_mod)
+    deltaR2 <- R2_full - R2_reduced
+    
+    data.frame(
+      Predictor = var,
+      deltaAIC = deltaAIC,
+      LRT = LRT,
+      df_diff = df_diff,
+      p_value = p_value,
+      R2_full = R2_full,
+      R2_reduced = R2_reduced,
+      deltaR2 = deltaR2,
+      stringsAsFactors = FALSE
+    )
+  }
+  
+  # Build table
+  results <- do.call(rbind, lapply(predictors, drop_one_safe, full = full_model))
+  results <- results %>% arrange(desc(deltaR2))
+  return(results)
+}
+
+```
+
+
+```{r DatabaseDownload}
+# Connect to Local database server and pull all necessary data, then close connection 
+con <- dbConnect(odbc(),
+                    Driver = "SQL Server", 
+                    Server = Server,
+                    Database = Database,
+                    Authentication = "ActiveDirectoryIntegrated")
+
+hsdbShellPest <- tbl(con,in_schema("hsdb", "ShellPest")) %>%
+  collect() %>%
+  filter(substring(SampleEventID, 1, 2) %in% Estuaries)
+
+hsdbConditionIndex <- tbl(con,in_schema("hsdb", "ConditionIndex")) %>%
+  collect() %>%
+  filter(substring(SampleEventID, 1, 2) %in% Estuaries)
+
+DBI::dbDisconnect(con)
+```
+
+```{r DataFiltersBasic}
+# Adjust data to include necessary fields and exclude incomplete years.
+ShellPest <- hsdbShellPest %>% 
+  mutate(Section = substring(OysterID, 3, 3),
+         FixedLocation = substring(SampleEventID, 19, 22),
+         Year = substring(SampleEventID, 8, 11),
+         Month = substring(SampleEventID, 12, 13),
+         Day = substr(SampleEventID, 14, 15),
+         Date = as.Date(paste(Year, Month, Day, sep = "-")),
+         Season = case_when(
+          month(Date) >= 1 & month(Date) <= 3 ~ "Winter",
+          month(Date) >= 4 & month(Date) <= 6 ~ "Spring",
+          month(Date) >= 7 & month(Date) <= 9 ~ "Summer",
+          month(Date) >= 10 & month(Date) <= 12 ~ "Fall",
+          TRUE ~ "Invalid")) %>%
+  left_join(hsdbConditionIndex, by = c("OysterID")) %>%
+  filter(Year < 2023) %>%
+  select(OysterID,
+         PhotoSurface,
+         TotalArea,
+         ClionaArea,
+         Section,
+         FixedLocation,
+         Date,
+         Month,
+         Year,
+         Season,
+         ProcessedBy,
+         ShellHeight,
+         TotalWeight) 
+
+# Adjust to provide the sum values needed for calculations
+ShellPest1 <- ShellPest %>%
+  group_by(OysterID,
+           Section,
+           FixedLocation,
+           Date,
+           Month,
+           Year,
+           Season,
+           ProcessedBy,
+           ShellHeight,
+           TotalWeight) %>%
+  summarise(TotalSurfaceArea = sum(TotalArea, na.rm = TRUE),
+         TotalExternalArea = sum(
+           if_else(substring(PhotoSurface, 2, 2) == "E", TotalArea, 0), na.rm = TRUE),
+         TotalInternalArea = sum(
+           if_else(substring(PhotoSurface, 2, 2) == "I", TotalArea, 0), na.rm = TRUE),
+         TotalTopArea = sum(
+           if_else(substring(PhotoSurface, 1, 1) == "T", TotalArea, 0), na.rm = TRUE),
+         TotalBottomArea = sum(
+           if_else(substring(PhotoSurface, 1, 1) == "B", TotalArea, 0), na.rm = TRUE),
+        # Cliona values area
+         TotalClionaArea = sum(ClionaArea, na.rm = TRUE),
+         ClionaExternalArea = sum(
+           if_else(substring(PhotoSurface, 2, 2) == "E", ClionaArea, 0), na.rm = TRUE),
+         ClionaInternalArea = sum(
+           if_else(substring(PhotoSurface, 2, 2) == "I", ClionaArea, 0), na.rm = TRUE),
+         ClionaTopArea = sum(
+           if_else(substring(PhotoSurface, 1, 1) == "T", ClionaArea, 0), na.rm = TRUE),
+         ClionaBottomArea = sum(
+           if_else(substring(PhotoSurface, 1, 1) == "B", ClionaArea, 0), na.rm = TRUE),
+         .groups = "drop"   # removes grouping after summarise
+         ) 
+
+ShellPest2 <- ShellPest1 %>% # getting everything that needs to be scaled
+  mutate(TotalWeight_scaled = scale(TotalWeight)[,1],
+         ShellHeight_scaled = scale(ShellHeight)[,1],
+         Year_scaled = scale(as.numeric(Year))[,1]  # Scaled for better convergence
+          ) %>% # getting everything that needs to be factored or numeric
+  mutate(Section = factor(Section, levels = c("W", "C", "E")),
+         Season = factor(Season, levels = c("Winter", "Spring", "Summer", "Fall")),
+         Month = factor(Month, levels = 1:12, labels = month.abb),
+         Year = factor(Year),   # Categorical for non-linear trends
+         Year_numeric = as.numeric(as.character(Year)),  # For linear trends
+         ProcessedBy = factor(ProcessedBy),
+         FixedLocation = factor(FixedLocation),
+         # Adjust to provide the calculated values for intensity
+         ClionaIntensityWholeOyster = if_else(TotalClionaArea == 0, 0, 
+                                              round(TotalClionaArea / TotalSurfaceArea, 4)),
+         ClionaIntensityExternal = if_else(ClionaExternalArea == 0, 0, 
+                                              round(ClionaExternalArea / TotalExternalArea, 4)),
+         ClionaIntensityInternal = if_else(ClionaInternalArea == 0, 0, 
+                                              round(ClionaInternalArea / TotalInternalArea, 4)),
+         ClionaIntensityTop = if_else(ClionaTopArea == 0, 0, 
+                                              round(ClionaTopArea / TotalTopArea, 4)),
+         ClionaIntensityBottom = if_else(ClionaBottomArea == 0, 0, 
+                                              round(ClionaBottomArea / TotalBottomArea, 4))
+         )
+
+# Create binary infection status (0 = uninfected, 1 = infected)
+ShellPest2$Infected <- ifelse(ShellPest2$ClionaIntensityWholeOyster > 0, 1, 0)
+
+# Remove unnecessary dataframes
+rm(hsdbConditionIndex, hsdbShellPest, ShellPest, ShellPest1)
+
+```
+
+<br>~~~ Intensity: Initial GLMM Models ~~~ <br>
+
+``` {r Intensity: Initial GLMM Models}
+
+# Additional optimization options if convergence issues occur:
+# control = glmmTMBControl(
+#   optimizer = optim,
+#   optArgs = list(method = "BFGS"),
+#   start = list(theta = log(1)),  # Starting values for dispersion
+#   map = list(),  # Fix parameters if needed
+#   optCtrl = list(eval.max = 1000, iter.max = 1000)
+# )
+
+# Data exploration to see what distribution to use
+# ggplot(ShellPest2, aes(x=ClionaIntensityWholeOyster)) + geom_histogram()
+# clionaplot <- ggplot(ShellPest2, aes(x=Infected)) + geom_histogram()
+
+cat("=== Counts: INITIAL MODEL COMMENTS === 
+      1. Basic data exploration showed that the best data distribution was a Beta distribution (continuous probability distributions defined on the interval [0, 1]) which subsets only non-zero data.
+      2. Thus this analysis examines only the 57% of individuals with some level of cliona infestation.
+      3. The analysis of those infected or not is captured in the Prevalence section below.")
+
+##### 1-Section ONLY as a fixed effect
+model.S <- glmmTMB(ClionaIntensityWholeOyster ~ Section,
+      family = beta_family(link = "logit"),
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+##### 2-TotalWeight ONLY as a fixed effect 
+model.TW <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled,
+       family = beta_family(link = "logit"),
+   data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+##### 3-ShellHeight ONLY as a fixed effect 
+model.SH <- glmmTMB(ClionaIntensityWholeOyster ~ ShellHeight_scaled,
+      family = beta_family(link = "logit"),
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+##### 4-Section AND TotalWeight as a fixed effect 
+model.S.TW <- glmmTMB(ClionaIntensityWholeOyster ~ Section + TotalWeight_scaled,
+    family = beta_family(link = "logit"),
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+##### 5-Section AND ShellHeight as a fixed effect 
+model.S.SH <- glmmTMB(ClionaIntensityWholeOyster ~ Section + ShellHeight_scaled,
+    family = beta_family(link = "logit"),
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+##### 6-TotalWeight AND ShellHeight as a fixed effect 
+model.TW.SH <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled,
+    family = beta_family(link = "logit"),
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+##### 7-TotalWeight AND ShellHeight AND Section as a fixed effect 
+model.TW.SH.S <- glmmTMB(
+  ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section,
+     family = beta_family(link = "logit"),
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
+Intensity_models1 <- list(
+  '1-SectionOnly' = model.S,
+  '2-TotalWeightOnly' = model.TW, 
+  '3-ShellHeightOnly' = model.SH, 
+  '4-Section+TotalWeight' = model.S.TW, 
+  '5-Section+SH' = model.S.SH,
+  '6-TotalWeight+SH' = model.TW.SH,
+  '7-TotalWeight+SH+Section' = model.TW.SH.S)
+
+aictab(Intensity_models1) #will use one for analysis
+
+# Key findings from model selection
+cat("=== Intensity: INITIAL MODEL SELECTION INSIGHTS === 
+      1. Section is highly important (1 >> 2 or 3 alone), TotalWeight is more important than ShellHeight (2 >> 3).
+      2. The best model includes all three effects (7 >> 4 or 5 or 6).
+      3. The best model fit involved subsetting the data to exclude oysters with no Cliona. Including cliona-free oysters caused issues with residuals due to the large number of zeros in the data.")
+
+######### Since 7-TotalWeight+SH+Section has a Massively better AICc, only it will be tested here
+best_model1 <- model.TW.SH.S
+#########
+
+cat('The following is Residual results, QQ Plot, R2, and Summary for the best fitting model ONLY: 
+    7-TotalWeight+SH+Section')
+
+##### Assess goodness-of-fit
+simulateResiduals(best_model1, n = 250, refit = FALSE, plot = TRUE)
+
+# Calculate R-squared equivalent for Intensity models. Closer to 1 is better
+r2(best_model1)
+
+##### Look at estimates
+summary(best_model1)
+
+# Key findings from Initial model 
+cat("=== Intensity: INITIAL MODEL INSIGHTS ===
+  ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section
+      1. Model fits the data alright with decent residuals. KS and disperison tests indicate fit issues, though this is common with large data sets.
+      2. R-squared of 0.103 indicates a weak predictive ability, meaning there's lots of room for improvement.
+      3. Larger oysters have more a higher intensity of cliona This makes sense and conforms to basic observations.
+      4. Counterintuitively, oysters with a greater shell height show slightly less cliona at a given weight.
+      5. There are statistically significant differences in the cliona intensity observed in the sections of the Bay.")
+
+# Remove unnecesssary models
+rm(model.S, model.S.SH, model.S.TW, model.SH, model.TW, model.TW.SH, model.TW.SH.S)
+
+```
+
+<br>~~~ Intensity: Improving Basic GLMM Models ~~~ <br>
+Adding Season and Year to best Initial model
+
+``` {r Intensity: Improving Basic GLMM Models}
+# Extended model set: Adding Season and Year systematically
+
+##### 1-Baseline - Best model from above
+### TotalWeight AND ShellHeight AND Section as a fixed effect 
+# model.TW.SH.S <- glmmTMB(
+#   ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section,
+#      family = beta_family(link = "logit"),
+#   data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+# 2-Add Season (cyclical pattern)
+# Section AND TotalWeight AND Season as a fixed effect 
+model.TW.SH.S.Ss <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season,
+                   family = beta_family(link = "logit"),
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+# 3-Add Year as a factor (non-linear temporal trend)
+# Section AND TotalWeight AND Year as a fixed effect 
+model.TW.SH.S.Y <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Year,
+                   family = beta_family(link = "logit"),
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+# 4-Add Year as a linear trend (more parsimonious)
+# Section AND TotalWeight AND Year_scaled as a fixed effect 
+model.TW.SH.S.Y_s <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Year_scaled,
+                   family = beta_family(link = "logit"),
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+# 5-Add Season AND Year (factor)
+# Section AND TotalWeight AND Season AND Year as a fixed effect 
+model.TW.SH.S.Ss.Y <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season + Year,
+                   family = beta_family(link = "logit"),
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+# 6-Add Season AND Year (linear)
+# Section AND TotalWeight AND Season AND Year_Scaled as a fixed effect 
+model.TW.SH.S.Ss.Y_s <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season + Year_scaled,
+                   family = beta_family(link = "logit"),
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+# 7-Add Season-Year interaction (test if seasonal patterns change over years)
+# Section AND TotalWeight AND Season-Year_scaled interaction as a fixed effect 
+model.TW.SH.S.Ss.X.Y_s <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season * Year_scaled,
+                   family = beta_family(link = "logit"),
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
+Intensity_models2 <- list('1-Section+TotalWt+SH (Base)' = best_model1, 
+                 '2-SEC+TW+SH+Season' = model.TW.SH.S.Ss, 
+                 '3-SEC+TW+SH+Year' = model.TW.SH.S.Y, 
+                 '4-SEC+TW+SH+YearScaled' = model.TW.SH.S.Y_s, 
+                 '5-SEC+TW+SH+Season+Year' = model.TW.SH.S.Ss.Y,
+                 '6-SEC+TW+SH+Season+YearScaled' = model.TW.SH.S.Ss.Y_s,
+                 '7-SEC+TW+SH+Season*YearScaled' = model.TW.SH.S.Ss.X.Y_s
+)
+
+aictab(Intensity_models2) #will use one for analysis
+
+
+# Key findings from model selection
+cat("=== Counts: IMPROVED MODEL SELECTION INSIGHTS ===
+      1. Both Season AND Year are highly important (5 >> 2 or 3 alone)
+      2. Non-linear year effects are crucial (5 >> 6: factor vs linear year)
+      3. Seasonal patterns are consistent across years (5 >> 7: no interaction needed)
+      4. Temporal factors explain MASSIVE variation (ΔAICc = 135 vs baseline)")
+
+######### Since 5-SEC+TW+SH+Season+Year has a significantly better AICc, only it will be tested here
+best_model2 <- model.TW.SH.S.Ss.Y
+#########
+
+cat('Following is Residual results, QQ Plot, ACF series residuals, R2, and Summary for the best fitting model ONLY:   
+    5-SEC+WT+Season+Year')
+
+##### Assess goodness-of-fit
+simulateResiduals(best_model2, n = 250, refit = FALSE, plot = TRUE)
+
+# Check for temporal autocorrelation since we have time series data
+acf(residuals(best_model2, type = "pearson"))
+# The residuals exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies. 
+
+# Calculate R-squared equivalent for count models. Closer to 1 is better
+r2(best_model2)
+
+##### Look at estimates
+summary(best_model2)
+
+# Key findings from Improved model 
+cat("=== Intensity: IMPROVED MODEL INSIGHTS ===
+  ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season + Year
+      1. Model fits the data pretty well with good residuals and and an improved R-squared (0.151 vs. 0.103) than the Initial model. Thus there is still a good amount of unexpalined variability.
+      2. ACF series residuals series exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies.
+      3. Key insights about larger oysters and differences between sections still hold.
+      4. There appear to be some statistical differences between the Seasons and the Years. Closer inspection of those results to follow.")
+
+# Remove unnecessary models
+
+rm(model.TW.SH.S.Ss, model.TW.SH.S.Y, model.TW.SH.S.Y_s, model.TW.SH.S.Ss.Y, model.TW.SH.S.Ss.Y_s, model.TW.SH.S.Ss.X.Y_s)
+
+```
+
+<br>~~~ Intensity: Bias Testing ~~~ <br>
+Examining the impact of observers and locations, as both have changed over the years. Both are treated as Random effects.
+
+``` {r Intensity: Bias Testing}
+
+# BIAS TESTING MODELS
+
+##### 1-Baseline - Best model from above
+### Add Season AND Year (factor)
+# # Section AND TotalWeight AND Season AND Year as a fixed effect 
+# model.TW.SH.S.Ss.Y <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season + Year,
+#                    family = beta_family(link = "logit"),
+#   data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+# OBSERVER BIAS TESTING 
+# 2-Add ProcessedBy to Intensity model
+model.Intensity_observer <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season + Year + (1|ProcessedBy),
+                            family = beta_family(link = "logit"),
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+# LOCATION BIAS TESTING
+# 3-Add FixedLocation as random effect (nested within Section) to Intensity model
+model.Intensity_location <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season + Year + (1|FixedLocation),
+                            family = beta_family(link = "logit"),
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+# COMBINED BIAS TESTING 
+# 4-Both observer and location effects on Intensity
+model.Intensity_both <- glmmTMB(ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season + Year + (1|ProcessedBy) + (1|FixedLocation),
+                        family = beta_family(link = "logit"),
+  data = subset(ShellPest2, ClionaIntensityWholeOyster > 0))
+
+### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
+# For Intensity models
+Intensity_bias_models <- list(
+  "Original" = best_model2,  # Your best Improved model
+  "Observer_Bias" = model.Intensity_observer,
+  "Location_Bias" = model.Intensity_location, 
+  "Both_Biases" = model.Intensity_both
+)
+
+aictab(Intensity_bias_models)
+
+# Key findings from model selection
+cat("=== Intensity: BIAS TESTING MODEL SELECTION INSIGHTS ===
+      1. Both Biases are present in Cliona Intensity data (ΔAICc = 116 vs baseline)
+      2. Location and Observer have a MASSIVE impact on results")
+
+cat('The following is Residual results, QQ Plot, R2, and Summary for the best fitting model ONLY: 
+    Both_Biases')
+
+# simulateResiduals(model.Intensity_observer, n = 150, refit = FALSE, plot = TRUE)
+# simulateResiduals(model.Intensity_location, n = 150, refit = FALSE, plot = TRUE)
+simulateResiduals(model.Intensity_both, n = 250, refit = FALSE, plot = TRUE)
+
+# Check for temporal autocorrelation since we have time series data
+acf(residuals(model.Intensity_both, type = "pearson"))
+
+# r2(model.Intensity_observer)
+# r2(model.Intensity_location)
+r2(model.Intensity_both)
+
+summary(model.Intensity_both)
+
+# Key findings from Bias testing model 
+cat("=== Intensity: BIAS TESTING MODEL INSIGHTS ===
+  ClionaIntensityWholeOyster ~ TotalWeight_scaled + ShellHeight_scaled + Section + Season + Year + ProcessedBy + (1|FixedLocation)
+      1. Model fits the data well with good residuals and a Conditional R-squared much higher than the Improved model (0.329 vs. 0.151). 
+      2. KS Test fails as expected with a large data set, and nothing looks wrong with the plot otherwise.
+      3. ACF series residuals series exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies.
+      4. The MASSIVE increase in model performance with both biases raise a lot of doubt about the Improved Model's insights. ")
+
+# Assign predictors of variance to see what has the most amount of influence in the bias model
+predictors <- c("Section", "TotalWeight_scaled", "ShellHeight_scaled", "Season", "Year")
+
+icc(model.Intensity_both)
+
+# Uses Intraclass Correlation Coefficient (ICC) to quantify how much variation in your outcome is attributable to Random effects
+vc <- VarCorr(model.Intensity_both)
+
+# Extract variance components and convert to numeric
+var_processed <- as.numeric(vc$cond$ProcessedBy)^2
+var_location  <- as.numeric(vc$cond$FixedLocation)^2
+var_resid     <- (pi^2) / 3  # residual variance (latent scale)
+
+# Total variance
+var_total <- var_processed + var_location + var_resid
+
+# ICC for each random effect
+icc_processed <- var_processed / var_total
+icc_location  <- var_location  / var_total
+icc_resid <- var_resid / var_total
+
+cat("Intraclass Correlation Coefficient (ICC) quantifies how much variation is attributable to Random effects:", "\n", "ICC ProcessedBy = ", icc_processed, "\n", "ICC Location = ", icc_location, "\n")
+
+check_collinearity(model.Intensity_both)
+
+# uses the importantance_table function to make a clean table detail each factor's importance in the final model
+importance_results <- importance_table(model.Intensity_both, predictors) 
+kable(importance_results, format = "pipe", digits = 3)
+
+# Key findings from Bias Importance  
+cat("=== Intensity: BIAS TESTING IMPORTANCE TABLE & ICC ===
+      1. Adjusted ICC indicates that after controling for other factors, ~23% of the variance is attributable to the random effects. Thus it is not the main driver of total variation but it is meaningful, and much more than the fixed effects.
+      2. The small percent of total variance contributed by the random effects is an artifact of the Beta model and doesn't fully represent the importance of these effects. More important is the overall better fit (AIC) and an improved conditional R-squared (0.329 vs. 0.151). 
+      3. Large Positive ΔAIC indicates that TotalWeight and Season are important predictors. 
+      4. Section's negative ΔAIC indicates it doesn't really improve the model.
+      5. TotalWeight and Season by have very small p-values, indicating they are highly significant.
+      6. Year and ShellHeight are both significant with very low p-values but far less than weight and season.
+      7. Shell Height effects are weak, but statistically significant (p = 0.004)
+      8. Section is not significant (p = 0.153).
+      9. ΔR2 measures how much of the model’s explained variance is uniquely attributable to that predictor. Even the most important variables explain a tiny amount of variance (less than 2%).")
+
+cat(" |||||||||||||||||||||||||||| CONCLUSION |||||||||||||||||||||||||||| 
+    1. TotalWeight is by far the strongest driver of cliona intensity. Heavier oysters tend to have more cliona.
+    2. Given the outsized impact of bias on this data, no other strong insights can be drawn without significant reprocessing, retraining, and robust QA measures being put in place. After which all these tests need to be run again and more detailed analysis run to determine any significant differences.
+    3. This solution represents a large input of staff time (thousands of hours) for a small amount of benefit.
+*** 4. Recommendation is to discontinue measuring cliona intensity in ShellPest data. ***")
+
+```
+
+<br>~~~ Prevalence: Initial GLMM Models ~~~ <br>
+
+``` {r Prevalence: Initial GLMM Models}
+
+# Additional optimization options if convergence issues occur:
+# control = glmmTMBControl(
+#   optimizer = optim,
+#   optArgs = list(method = "BFGS"),
+#   start = list(theta = log(1)),  # Starting values for dispersion
+#   map = list(),  # Fix parameters if needed
+#   optCtrl = list(eval.max = 1000, iter.max = 1000)
+# )
+
+cat("=== Prevalence: INITIAL MODEL COMMENTS === 
+      1. Basic data exploration showed that the best data distribution was a binomial since this is binary data. 
+      2. Present = 1; Absent = 0")
+
+##### 1-Section ONLY as a fixed effect
+P.model.S <- glmmTMB(Infected ~ Section,
+                   family = binomial,
+                   data = ShellPest2)
+
+##### 2-TotalWeight ONLY as a fixed effect 
+P.model.TW <- glmmTMB(Infected ~ TotalWeight_scaled,
+                   family = binomial,
+                   data = ShellPest2)
+
+##### 3-Section AND ShellHeight as a fixed effect 
+P.model.SH <- glmmTMB(Infected ~ ShellHeight_scaled,
+                   family = binomial,
+                   data = ShellPest2)
+
+##### 4-Section AND TotalWeight as a fixed effect 
+P.model.S.TW <- glmmTMB(Infected ~ Section + TotalWeight_scaled,
+                   family = binomial,
+                   data = ShellPest2)
+
+##### 5-Section AND ShellHeight as a fixed effect 
+P.model.S.SH <- glmmTMB(Infected ~ Section + ShellHeight_scaled,
+                   family = binomial,
+                   data = ShellPest2)
+
+##### 6-TotalWeight AND ShellHeight as a fixed effect 
+P.model.TW.SH <- glmmTMB(Infected ~ TotalWeight_scaled + ShellHeight_scaled,
+                   family = binomial,
+                   data = ShellPest2)
+
+##### 7-TotalWeight AND ShellHeight AND Section as a fixed effect 
+P.model.TW.SH.S <- glmmTMB(Infected ~ TotalWeight_scaled + ShellHeight_scaled + Section,
+                   family = binomial,
+                   data = ShellPest2)
+
+### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
+Prevalence_models1 <- list('1-SectionOnly' = P.model.S, 
+                 '2-TotalWeightOnly' = P.model.TW, 
+                 '3-ShellHeightOnly' = P.model.SH, 
+                 '4-Section+TotalWeight' = P.model.S.TW, 
+                 '5-Section+SH' = P.model.S.SH,
+                 '6-TotalWeight+SH' = P.model.TW.SH,
+                 '7-TotalWeight+SH+Section' = P.model.TW.SH.S)
+
+aictab(Prevalence_models1) #will use one for analysis
+
+# Key findings from model selection
+cat("=== Prevalence: INITIAL MODEL SELECTION INSIGHTS === 
+      1. Adding ShellHeight to Model #4 improved AICc slightly, with worse residuals, and no change to R2 value. Thus, preference for the simpler model means that #4 was chosen as the best model.
+      2. Section is highly important (1 >> 2 or 3)
+      3. Of the two, TotalWeight is more important than ShellHeight (2 > 3)")
+
+######### Since Section+TotalWeight has a Massively better AICc, only it will be tested here
+P.best_model1 <- P.model.S.TW
+#########
+
+cat('The following is Residual results, QQ Plot, R2, and Summary for the best fitting model ONLY: 
+    4-Section+TotalWeight')
+
+##### Assess goodness-of-fit
+simulateResiduals(P.best_model1, n = 250, refit = FALSE, plot = TRUE)
+
+# Calculate R-squared equivalent for count models. Closer to 1 is better
+r2(P.best_model1)
+
+##### Look at estimates
+summary(P.best_model1)
+
+# Key findings from Initial model 
+cat("=== Prevalence: INITIAL MODEL INSIGHTS ===
+  Infected ~ Section + TotalWeight_scaled
+      1. Model fits the data pretty well with good residuals.
+      2. Tjur's R-squared is used here because Prevalence is a binary outcome. A value of 0.294 indicates a moderate ability to discriminate between the 2 outcomes. Thus, there's room for improvement.
+      3. Larger oysters have a higher prevalence. This makes sense and conforms to basic observations.
+      4. There are statistically significant differences in the prevalence of cliona infestation observed in the sections of the Bay.")
+
+# Remove unnecessay models
+# rm(P.model.S, P.model.TW, P.model.SH, P.model.S.TW, P.model.S.SH, P.model.TW.SH, P.model.TW.SH.S)
+
+```
+
+
+<br>~~~ Prevalence: Improving Basic GLMM Models ~~~ <br>
+Adding Season and Year to best Initial model
+
+``` {r Prevalence: Improving Basic GLMM Models}
+# Extended model set: Adding Season and Year systematically
+
+##### 1-Baseline - Best model from above
+## Section AND TotalWeight as a fixed effect 
+# P.model.S.TW <- glmmTMB(Infected ~ Section + TotalWeight_scaled,
+#                    family = binomial,
+#                    data = ShellPest2)
+
+# 2-Add Season (cyclical pattern)
+# Section AND TotalWeight AND Season as a fixed effect 
+P.model.S.TW.Ss <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season,
+                   family = binomial,
+                   data = ShellPest2)
+
+# 3-Add Year as a factor (non-linear temporal trend)
+# Section AND TotalWeight AND Year as a fixed effect 
+P.model.S.TW.Y <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Year,
+                   family = binomial,
+                   data = ShellPest2)
+
+# 4-Add Year as a linear trend (more parsimonious)
+# Section AND TotalWeight AND Year_scaled as a fixed effect 
+P.model.S.TW.Y_s <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Year_scaled,
+                   family = binomial,
+                   data = ShellPest2)
+
+# 5-Add Season AND Year (factor)
+# Section AND TotalWeight AND Season AND Year as a fixed effect 
+P.model.S.TW.Ss.Y <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + Year,
+                   family = binomial,
+                   data = ShellPest2)
+
+# 6-Add Season AND Year (linear)
+# Section AND TotalWeight AND Season AND Year_Scaled as a fixed effect 
+P.model.S.TW.Ss.Y_s <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season + Year_scaled,
+                   family = binomial,
+                   data = ShellPest2)
+
+
+# 7-Add Season-Year interaction (test if seasonal patterns change over years)
+# Section AND TotalWeight AND Season-Year_scaled interaction as a fixed effect 
+P.model.S.TW.Ss.X.Y_s <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Season * Year_scaled,
+                   family = binomial,
+                   data = ShellPest2)
+
+### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
+Prevalence_models2 <- list('1-SectionWeight (Base)' = P.best_model1, 
+                 '2-SecWt+Season' = P.model.S.TW.Ss, 
+                 '3-SecWt+Year' = P.model.S.TW.Y, 
+                 '4-SecWt+YearScaled' = P.model.S.TW.Y_s, 
+                 '5-SecWt+Season+Year' = P.model.S.TW.Ss.Y,
+                 '6-SecWt+Season+YearScaled' = P.model.S.TW.Ss.Y_s,
+                 '7-SecWt+Season*YearScaled' = P.model.S.TW.Ss.X.Y_s)
+
+aictab(Prevalence_models2) #will use one for analysis
+
+# Key findings from model selection
+cat("=== Prevalence: MODEL SELECTION INSIGHTS ===
+      1. Year is highly important (3 >> 5 or 2 alone)
+      2. Non-linear year effects are crucial (5 >> 6: factor vs linear year)
+      3. Seasonal patterns are consistent across years (5 >> 7: no interaction needed)
+      4. Temporal factors explain MASSIVE variation (ΔAICc = 212 vs baseline)")
+
+######### Since SSectionWeight+Year has a significantly better AICc, only it will be tested here
+P.best_model2 <- P.model.S.TW.Y
+#########
+
+cat('The following is Residual results, QQ Plot, R2, and Summary for the best fitting model ONLY: 
+    3-SecWt+Year')
+
+##### Assess goodness-of-fit
+simulateResiduals(P.best_model2, n = 175, refit = FALSE, plot = TRUE)
+
+# Check for temporal autocorrelation since we have time series data
+acf(residuals(P.best_model2, type = "pearson"))
+# The residuals exhibit no significant autocorrelation, implying that the model has effectively captured the temporal dependencies. 
+
+# Calculate R-squared equivalent for count models. Closer to 1 is better
+r2(P.best_model2)
+
+##### Look at estimates
+summary(P.best_model2)
+
+# Key findings from Improved model 
+cat("=== Prevalence: IMPROVED MODEL INSIGHTS ===
+  Infected ~ Section + TotalWeight_scaled + Year
+      1. Model fits the data pretty well with good residuals and a slightly improved R-squared (0.333 vs. 0.294).
+      2. ACF series residuals series exhibit SIGNIFICANT autocorrelation, implying that the model has NOT captured the temporal dependencies. This is a major issue to resolve before any other insights can be drawn.")
+
+# Remove unnecessary models
+# rm(P.model.S.TW.Ss, P.model.S.TW.Y, P.model.S.TW.Y_s, P.model.S.TW.Ss.Y, P.model.S.TW.Ss.Y_s, P.model.S.TW.Ss.X.Y_s)
+
+```
+
+
+<br>~~~ Prevalence: Bias Testing ~~~ <br>
+Examining the impact of observers and locations, as both have changed over the years
+
+``` {r Prevalence: Bias Testing}
+
+# BIAS TESTING MODELS
+
+##### 1-Baseline - Best model from above
+### Add Year as a factor (non-linear temporal trend)
+# # Section AND TotalWeight AND Year as a fixed effect 
+# P.model.S.TW.Y <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Year,
+#                    family = binomial,
+#                    data = ShellPest2)
+
+# OBSERVER BIAS TESTING 
+# 2-Add ProcessedBy to prevalence model
+model.P_observer <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Year + (1|ProcessedBy),
+                           family = binomial,
+                           data = ShellPest2)
+
+# LOCATION BIAS TESTING
+# 3-Add FixedLocation as random effect (nested within Section) to prevalence model
+model.P_location <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Year + (1|FixedLocation),
+                           family = binomial,
+                           data = ShellPest2)
+
+# COMBINED BIAS TESTING 
+# 4-Both observer and location effects on prevalence
+model.P_both <- glmmTMB(Infected ~ Section + TotalWeight_scaled + Year + (1|ProcessedBy) + (1|FixedLocation),
+                       family = binomial,
+                       data = ShellPest2)
+
+### Use AICc to compare the 2 models: we'll use the model with the lowest score for making any inferences moving forward
+# For COUNT models
+prevalence_bias_models <- list(
+  "Original" = P.best_model2,  # Your best Improved model
+  "Observer_Bias" = model.P_observer,
+  "Location_Bias" = model.P_location, 
+  "Both_Biases" = model.P_both
+)
+
+aictab(prevalence_bias_models)
+
+# Key findings from model selection
+cat("=== Prevalence: BIAS TESTING MODEL SELECTION INSIGHTS ===
+      1. Both Biases are present in Cliona prevalence data (ΔAICc = 919 vs baseline)
+      2. Location and Observer have a MASSIVE impact on results")
+
+cat('The following is Residual results, QQ Plot, R2, and Summary for the best fitting model ONLY: 
+    Both_Biases')
+
+# simulateResiduals(model.P_observer, n = 250, refit = FALSE, plot = TRUE)
+# simulateResiduals(model.P_location, n = 250, refit = FALSE, plot = TRUE)
+simulateResiduals(model.P_both, n = 250, refit = FALSE, plot = TRUE)
+
+# Check for temporal autocorrelation since we have time series data
+acf(residuals(model.P_both, type = "pearson"))
+
+r2(model.P_both)
+
+summary(model.P_both)
+
+# Key findings from Bias testing model 
+cat("=== Prevalence: BIAS TESTING MODEL INSIGHTS ===
+  Infected ~ Section + TotalWeight_scaled + Year + ProcessedBy + (1|FixedLocation)
+      1. Model fits the data pretty well with good residuals and and R-squared much better than the Improved model (0.499 vs. 0.333). KS Test fail is expected with a large data set, and nothing looks wrong with the plot otherwise.
+      2. ACF series residuals series looks much better, exhibiting no significant autocorrelation, implying that the model has effectively captured the temporal dependencies.
+      3. Much of the differences between sections and years is no longer significant, which may be an artifact of the biases.
+      3. The MASSIVE increase in model performance with both biases raise a lot of doubt about the Improved Model's insights. ")
+
+# Assign predictors of variance to see what has the most amount of influence in the bias model
+predictors.P <- c("Section", "TotalWeight_scaled", "Year")
+
+# Uses Intraclass Correlation Coefficient (ICC) to quantify how much variation in your outcomeis attributable to Random effects
+vc <- VarCorr(model.P_both)
+
+# Extract variance components
+var_processed <- as.numeric(vc$cond$ProcessedBy)
+var_location  <- as.numeric(vc$cond$FixedLocation)
+var_resid     <- sigma(model.P_both)^2  # residual variance
+
+# Total variance
+var_total <- var_processed + var_location + var_resid
+
+# ICC for each random effect
+icc_processed <- var_processed / var_total
+icc_location  <- var_location  / var_total
+
+cat("Intraclass Correlation Coefficient (ICC) quantifies how much variation is attributable to Random effects:", "\n", "ICC ProcessedBy = ", icc_processed, "\n", "ICC Location = ", icc_location, "\n")
+
+check_collinearity(model.P_both)
+
+# # Uses Intraclass Correlation Coefficient (ICC) to quantify how much variation in your outcomeis attributable to Random effects
+# cat("Intraclass Correlation Coefficient (ICC) quantifies how much variation is attributable to Random effects:")
+# icc(model.P_both)
+
+# uses the importantance_table function to make a clean table detail each factor's importance in the final model
+importance_results.P <- importance_table(model.P_both, predictors.P) 
+kable(importance_results.P, format = "pipe", digits = 3)
+
+# Key findings from Bias Importance  
+cat("=== Prevalence: BIAS TESTING IMPORTANCE TABLE & ICC ===
+      1. Adjusted ICC indicates that after controling for other factors, ~61% of the variance is attributable to the random effect of FixedLocation and 4% to ProcessedBy, which is substantial.
+      2. The Check for Multicollinearity show that the model’s fixed effects are clean, independent, and interpretable. No red flags for collinearity.
+      3. Large Positive ΔAIC indicates that TotalWeight is an extremely important predictor. 
+      4. Section and Year's low ΔAIC indicates they doesn't improve the model much.
+      5. TotalWeight and Year have very small p-values, indicating they are highly significant.
+      6. Section is not significant (p = 0.067).
+      7. ΔR2 measures how much of the model’s explained variance is uniquely attributable to that predictor. TotalWeight explains ~4% on its own; Year and Season add less than 0.5%.")
+
+cat(" |||||||||||||||||||||||||||| CONCLUSION |||||||||||||||||||||||||||| 
+    1. TotalWeight is by far the strongest driver of cliona prevalence. Heavier oysters tend to have higher cliona prevalence.
+    2. Given the outsized impact of bias on this data, no other strong insights can be drawn without significant reprocessing, retraining, and robust QA measures being put in place. After which all these tests need to be run again and more detailed analysis run to determine any significant differences.
+    3. This solution represents a large input of staff time (thousands of hours) for a small amount of benefit.
+*** 4. Recommendation is to discontinue noting the presence or absence of cliona in ShellPest data. ***")
+
+```
+
