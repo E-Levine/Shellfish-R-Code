@@ -19,15 +19,19 @@ library(DT)
 
 ```{r Load Data}
 ###### Read in data
-dater <- read.csv("All_Oysters_2025-05 csv.csv") %>% 
+########################## changed dater -> RawOysterData
+RawOysterData <- read.csv("All_Oysters_2025-05 csv.csv") %>% 
   mutate(FixedLocationID = factor(FixedLocationID), 
-         StationName = factor(StationName))
+         StationName = factor(StationName),
+         ProjectGroup = factor(substring(StationName, 1, 4))
+         )
 
 ###### Take a quick look at the data
-glimpse(dater)
+glimpse(RawOysterData)
 
 ###### Summarize data: count up number of samples, total number of legal oysters, mean, SD, lower 95% CL, upper 95% CL, and CV of the number of legal oysters, and finally the number of 0 observations by FixedLocationID
-datSumm <- dater %>% 
+########################## changed datSumm -> RawDataSummary
+RawDataSummary <- RawOysterData %>% 
   group_by(FixedLocationID) %>% 
   summarize(nSamples = n(), 
             TotalLegal = sum(NumLegal), 
@@ -40,4 +44,439 @@ datSumm <- dater %>%
             )
 
 ###### Look at the summaries
-datatable(datSumm)
+print(RawDataSummary)
+
+######### Only stations with a MeanLegal density of 2.8 oysters per quadrat will be modeled
+### DMFM is only interested in opening bars with a LOWER CONFIDENCE INTERVAL density of 400 bags per acre or greater.
+### Raw Means and Modeled means have been very close in the past.
+### The lower confidence interval is ALWAYS less than the Mean
+### A mean of 200 bags per acre will not be eligible to open.
+### 200 bags/acre = 11.1 oyster /m2 = 2.8 oysters/quadrat
+YesModel <- RawDataSummary %>%
+  filter(MeanLegal >= 2.8) %>%
+  select(FixedLocationID)
+
+OysterData <- RawOysterData %>%
+  right_join(YesModel, 
+             by = c("FixedLocationID")
+  )
+
+```
+
+``` {r Model Fitting}
+### Exploring the best fit for the model(s)
+# # Figure out which data distribution to use
+# ALL
+hist(OysterData$NumLegal)
+# RESTORE
+hist(subset(OysterData, ProjectGroup == "REST")$NumLegal)
+# NFWF-2021
+hist(subset(OysterData, ProjectGroup == "NFWF")$NumLegal)
+
+
+
+### Testing pooled vs. reef-specific means
+# Model A (pooled)
+m_pooled <- glmmTMB(NumLegal ~ 1,
+                    family = nbinom2,
+                    data = OysterData)
+# Model B (reef-specific means)
+m_Reef_Specific <- glmmTMB(NumLegal ~ FixedLocationID,
+                     family = nbinom2,
+                     data = OysterData)
+# Model C (ProjectGroup-specific means)
+m_Project_Specific <- glmmTMB(NumLegal ~ ProjectGroup,
+                     family = nbinom2,
+                     data = OysterData)
+# Compared
+anova(m_pooled, m_Reef_Specific, m_Project_Specific)
+#### Results indicate adding Reef_Specific massively improved model fit over pooled and Project (ΔAIC = 15, p < 0.001). Thus models for each ProjectGroup were used.
+
+```
+
+``` {r Reef Specific Models}
+###### 
+###### Model-fitting by FixedLocationID: there are 4 models, 2 nbinom and 2 poisson, one with and one without zero-inflation
+######
+
+# 391
+F391 <- OysterData %>% filter(FixedLocationID=="391")
+m391_1 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = nbinom2, data = F391)
+m391_2 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = nbinom2, data = F391)
+m391_3 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = poisson, data = F391)
+m391_4 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = poisson, data = F391)
+
+###### Assess goodness-of-fit
+simulateResiduals(m391_1, n = 1000, plot = T)
+simulateResiduals(m391_2, n = 1000, plot = T)
+simulateResiduals(m391_3, n = 1000, plot = T)
+simulateResiduals(m391_4, n = 1000, plot = T)
+# _3 & _4 have poor residuals
+
+###### Compare via AICc
+aictab(list(m391_1, m391_2, m391_3, m391_4))
+# Best score is _2
+
+# Assign best model
+model391 <- m391_2
+
+####################
+
+# 392
+F392 <- OysterData %>% filter(FixedLocationID=="392")
+m392_1 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = nbinom2, data = F392)
+m392_2 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = nbinom2, data = F392)
+m392_3 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = poisson, data = F392)
+m392_4 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = poisson, data = F392)
+
+###### Assess goodness-of-fit
+simulateResiduals(m392_1, n = 1000, plot = T)
+simulateResiduals(m392_2, n = 1000, plot = T)
+simulateResiduals(m392_3, n = 1000, plot = T)
+simulateResiduals(m392_4, n = 1000, plot = T)
+# _3 & _4 have poor residuals
+
+###### Compare via AICc
+aictab(list(m392_1, m392_2, m392_3, m392_4))
+# Best score is _2
+
+# Assign best model
+model392 <- m392_2
+
+####################
+
+# 393
+F393 <- OysterData %>% filter(FixedLocationID=="393")
+m393_1 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = nbinom2, data = F393)
+m393_2 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = nbinom2, data = F393)
+m393_3 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = poisson, data = F393)
+m393_4 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = poisson, data = F393)
+
+###### Assess goodness-of-fit
+simulateResiduals(m393_1, n = 1000, plot = T)
+simulateResiduals(m393_2, n = 1000, plot = T)
+simulateResiduals(m393_3, n = 1000, plot = T)
+simulateResiduals(m393_4, n = 1000, plot = T)
+# _3 & _4 have poor residuals
+
+###### Compare via AICc
+aictab(list(m393_1, m393_2, m393_3, m393_4))
+# Best score is _2
+
+# Assign best model
+model393 <- m393_2
+
+####################
+
+# 394
+F394 <- OysterData %>% filter(FixedLocationID=="394")
+m394_1 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = nbinom2, data = F394)
+m394_2 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = nbinom2, data = F394)
+m394_3 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = poisson, data = F394)
+m394_4 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = poisson, data = F394)
+
+###### Assess goodness-of-fit
+simulateResiduals(m394_1, n = 1000, plot = T)
+simulateResiduals(m394_2, n = 1000, plot = T)
+simulateResiduals(m394_3, n = 1000, plot = T)
+simulateResiduals(m394_4, n = 1000, plot = T)
+# _3 & _4 have poor residuals
+
+###### Compare via AICc
+aictab(list(m394_1, m394_2, m394_3, m394_4))
+# Best score is _2
+
+# Assign best model
+model394 <- m394_2
+
+####################
+
+# 396
+F396 <- OysterData %>% filter(FixedLocationID=="396")
+m396_1 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = nbinom2, data = F396)
+m396_2 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = nbinom2, data = F396)
+m396_3 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = poisson, data = F396)
+m396_4 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = poisson, data = F396)
+
+###### Assess goodness-of-fit
+simulateResiduals(m396_1, n = 1000, plot = T)
+simulateResiduals(m396_2, n = 1000, plot = T)
+simulateResiduals(m396_3, n = 1000, plot = T)
+simulateResiduals(m396_4, n = 1000, plot = T)
+# _3 & _4 have poor residuals
+
+###### Compare via AICc
+aictab(list(m396_1, m396_2, m396_3, m396_4))
+# Best score is _2
+
+# Assign best model
+model396 <- m396_2
+
+####################
+
+# 397
+F397 <- OysterData %>% filter(FixedLocationID=="397")
+m397_1 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = nbinom2, data = F397)
+m397_2 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = nbinom2, data = F397)
+m397_3 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = poisson, data = F397)
+m397_4 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = poisson, data = F397)
+
+###### Assess goodness-of-fit
+simulateResiduals(m397_1, n = 1000, plot = T)
+simulateResiduals(m397_2, n = 1000, plot = T)
+simulateResiduals(m397_3, n = 1000, plot = T)
+simulateResiduals(m397_4, n = 1000, plot = T)
+# _3 & _4 have poor residuals
+
+###### Compare via AICc
+aictab(list(m397_1, m397_2, m397_3, m397_4))
+# Best score is _2
+
+# Assign best model
+model397 <- m397_2
+
+####################
+
+# 398
+F398 <- OysterData %>% filter(FixedLocationID=="398")
+m398_1 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = nbinom2, data = F398)
+m398_2 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = nbinom2, data = F398)
+m398_3 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = poisson, data = F398)
+m398_4 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = poisson, data = F398)
+
+###### Assess goodness-of-fit
+simulateResiduals(m398_1, n = 1000, plot = T)
+simulateResiduals(m398_2, n = 1000, plot = T)
+simulateResiduals(m398_3, n = 1000, plot = T)
+simulateResiduals(m398_4, n = 1000, plot = T)
+# _3 & _4 have poor residuals
+
+###### Compare via AICc
+aictab(list(m398_1, m398_2, m398_3, m398_4))
+# Best score is _2
+
+# Assign best model
+model398 <- m398_2
+
+####################
+
+# 399
+F399 <- OysterData %>% filter(FixedLocationID=="399")
+m399_1 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = nbinom2, data = F399)
+m399_2 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = nbinom2, data = F399)
+m399_3 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = poisson, data = F399)
+m399_4 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = poisson, data = F399)
+
+###### Assess goodness-of-fit
+simulateResiduals(m399_1, n = 1000, plot = T)
+simulateResiduals(m399_2, n = 1000, plot = T)
+simulateResiduals(m399_3, n = 1000, plot = T)
+simulateResiduals(m399_4, n = 1000, plot = T)
+# _3 & _4 have poor residuals
+
+###### Compare via AICc
+aictab(list(m399_1, m399_2, m399_3, m399_4))
+# Best score is _2
+
+# Assign best model
+model399 <- m399_2
+
+####################
+
+# 400
+F400 <- OysterData %>% filter(FixedLocationID=="400")
+m400_1 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = nbinom2, data = F400)
+m400_2 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = nbinom2, data = F400)
+m400_3 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = poisson, data = F400)
+m400_4 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~0, family = poisson, data = F400)
+
+###### Assess goodness-of-fit
+simulateResiduals(m400_1, n = 1000, plot = T)
+simulateResiduals(m400_2, n = 1000, plot = T)
+simulateResiduals(m400_3, n = 1000, plot = T)
+simulateResiduals(m400_4, n = 1000, plot = T)
+# _3 & _4 have poor residuals
+
+###### Compare via AICc
+aictab(list(m400_1, m400_2, m400_3, m400_4))
+# Best score is _2
+
+# Assign best model
+model400 <- m400_2
+
+####################
+
+##########
+##########
+### Remove unneeded models
+
+# rm(m391_1, m391_2, m391_3, m391_4)
+# rm(m392_1, m392_2, m392_3, m392_4)
+# rm(m393_1, m393_2, m393_3, m393_4)
+# rm(m394_1, m394_2, m394_3, m394_4)
+# rm(m396_1, m396_2, m396_3, m396_4)
+# rm(m397_1, m397_2, m397_3, m397_4)
+# rm(m398_1, m398_2, m398_3, m398_4)
+# rm(m399_1, m399_2, m399_3, m399_4)
+# rm(m400_1, m400_2, m400_3, m400_4)
+
+```
+
+``` {r Reef Specific}
+###### Final list of best-fitting model for each FixedLocationID
+## FOR 2026 WE MIGHT NEED TO MODIFY THESE DEPENDING ON UPDATED MODEL SELECTION RESULTS
+## ONLY 1 SITE (FixedLocationID=="395" = m19) WAS A ZERO INFLATED (POISSON) MODEL; THE REST WERE REGULAR OLD NB MODELS
+ModelList <- list(model391, model392, model393, model394, model396, model397, model398, model399, model400)
+
+###### Create an empty data frame for storing simulation results
+SimulationData <- data.frame(FixedLocationID = sort(unique(OysterData$FixedLocationID)), nSamples = NA, meanLog = NA, meanLogSE = NA, ziLogit = NA, ziLogitSE = NA, disp = NA, nbinom = NA, zi = NA) %>% mutate(nSamples = if_else(FixedLocationID %in% c("391", "397"), 50, 30))
+
+###### Populate simDate with parameter values for each model (to be used in the simulation)
+for (i in 1:length(ModelList)){
+  meanLog <- unique(predict(ModelList[[i]], type = "link", se.fit = T)$fit)
+  meanLogSE <- unique(predict(ModelList[[i]], type = "link", se.fit = T)$se.fit)
+  ziLogit <- unique(predict(ModelList[[i]], type = "zlink", se.fit = T)$fit)
+  ziLogitSE <- unique(predict(ModelList[[i]], type = "zlink", se.fit = T)$se.fit)
+  disp <- if_else(is.na(sigma(ModelList[[i]]))==TRUE, unique(predict(ModelList[[i]], type = "disp", se.fit = T)$fit), sigma(ModelList[[i]]))
+  nbinom <- if_else("nbinom2" %in% family(ModelList[[i]]), 1, 0)
+  zi <- if_else(ModelList[[i]]$modelInfo$allForm$ziformula=="~Year"|ModelList[[i]]$modelInfo$allForm$ziformula=="~1", 1, 0)
+  SimulationData[i,3:ncol(SimulationData)] <- c(meanLog, meanLogSE, ziLogit, ziLogitSE, disp, nbinom, zi)
+}
+
+###### Look at the file
+View(SimulationData)
+
+###### Desired number of simulation replicates per FixedLocationID
+nSims <- 1000
+
+###### Expand SimulationData base file by the number of simulation replicates (each row is replicated nSims times)
+SimulationData <- SimulationData[rep(seq_len(nrow(SimulationData)), each = nSims), ]
+
+###### Number the simulation replicates for each FixedLocationID
+SimulationData$simRep <- rep(1:nSims, times = length(unique(SimulationData$FixedLocationID)))
+
+###### Create a file for storing results (one row per simRep x FixedLocationID)
+resultsFile <- SimulationData %>% select(simRep, FixedLocationID, nSamples, meanLog, meanLogSE, ziLogit, ziLogitSE, disp, nbinom, zi) %>% mutate(trueMean = meanLog, estMean = NA, lwr = NA, upr = NA, bias = NA)
+
+###### Optional: set seed for reproducibility
+set.seed(42)
+
+
+
+
+
+```
+
+``` {r Project Specific Models}
+# RESTORE
+FRESTORE <- OysterData %>% filter(ProjectGroup=="REST")
+mRESTORE_1 <- glmmTMB(NumLegal ~ FixedLocationID, dispformula = ~1, ziformula = ~1, family = nbinom2, data = FRESTORE)
+mRESTORE_2 <- glmmTMB(NumLegal ~ FixedLocationID, dispformula = ~1, ziformula = ~0, family = nbinom2, data = FRESTORE)
+mRESTORE_3 <- glmmTMB(NumLegal ~ FixedLocationID, dispformula = ~1, ziformula = ~1, family = poisson, data = FRESTORE)
+mRESTORE_4 <- glmmTMB(NumLegal ~ FixedLocationID, dispformula = ~1, ziformula = ~0, family = poisson, data = FRESTORE)
+
+###### Assess goodness-of-fit
+simulateResiduals(mRESTORE_1, n = 1000, plot = T)
+simulateResiduals(mRESTORE_2, n = 1000, plot = T)
+simulateResiduals(mRESTORE_3, n = 1000, plot = T)
+simulateResiduals(mRESTORE_4, n = 1000, plot = T)
+# _3 & _4 have poor residuals
+
+###### Compare via AICc
+aictab(list(mRESTORE_1, mRESTORE_2, mRESTORE_3, mRESTORE_4))
+# Best score is _2
+
+# Assign best model
+modelRESTORE <- mRESTORE_1
+
+# NFWF
+FNFWF <- OysterData %>% filter(ProjectGroup=="NFWF")
+mNFWF_1 <- glmmTMB(NumLegal ~ FixedLocationID, dispformula = ~1, ziformula = ~1, family = nbinom2, data = FNFWF)
+mNFWF_2 <- glmmTMB(NumLegal ~ FixedLocationID, dispformula = ~1, ziformula = ~0, family = nbinom2, data = FNFWF)
+mNFWF_3 <- glmmTMB(NumLegal ~ FixedLocationID, dispformula = ~1, ziformula = ~1, family = poisson, data = FNFWF)
+mNFWF_4 <- glmmTMB(NumLegal ~ FixedLocationID, dispformula = ~1, ziformula = ~0, family = poisson, data = FNFWF)
+
+###### Assess goodness-of-fit
+simulateResiduals(mNFWF_1, n = 1000, plot = T)
+simulateResiduals(mNFWF_2, n = 1000, plot = T)
+simulateResiduals(mNFWF_3, n = 1000, plot = T)
+simulateResiduals(mNFWF_4, n = 1000, plot = T)
+# _3 & _4 have poor residuals
+
+###### Compare via AICc
+aictab(list(mNFWF_1, mNFWF_2, mNFWF_3, mNFWF_4))
+# Best score is _1, but just by a little _2 AIC is 0.74
+
+# Assign best model
+modelNFWF <- mNFWF_1
+
+####################
+
+##########
+##########
+### Remove unneeded models
+
+# rm(mRESTORE_1, mRESTORE_2, mRESTORE_3, mRESTORE_4)
+# rm(mNFWF_1, mNFWF_2, mNFWF_3, mNFWF_4)
+
+```
+
+``` {r Pooled Models}
+# Pooled
+mPooled_1 <- glmmTMB(NumLegal ~ FixedLocationID, dispformula = ~1, ziformula = ~1, family = nbinom2, data = OysterData)
+mPooled_2 <- glmmTMB(NumLegal ~ FixedLocationID, dispformula = ~1, ziformula = ~0, family = nbinom2, data = OysterData)
+mPooled_3 <- glmmTMB(NumLegal ~ FixedLocationID, dispformula = ~1, ziformula = ~1, family = poisson, data = OysterData)
+mPooled_4 <- glmmTMB(NumLegal ~ FixedLocationID, dispformula = ~1, ziformula = ~0, family = poisson, data = OysterData)
+
+###### Assess goodness-of-fit
+simulateResiduals(mPooled_1, n = 1000, plot = T)
+simulateResiduals(mPooled_2, n = 1000, plot = T)
+simulateResiduals(mPooled_3, n = 1000, plot = T)
+simulateResiduals(mPooled_4, n = 1000, plot = T)
+# _3 & _4 have poor residuals
+
+###### Compare via AICc
+aictab(list(mPooled_1, mPooled_2, mPooled_3, mPooled_4))
+# Best score is _1
+
+
+mPooled_11 <- glmmTMB(NumLegal ~ FixedLocationID, dispformula = ~1, ziformula = ~1, family = nbinom2, data = OysterData)
+mPooled_12 <- glmmTMB(NumLegal ~ FixedLocationID, dispformula = ~FixedLocationID, ziformula = ~1, family = nbinom2, data = OysterData)
+
+###### Assess goodness-of-fit
+simulateResiduals(mPooled_11, n = 1000, plot = T)
+simulateResiduals(mPooled_12, n = 1000, plot = T)
+# _1 has poor residuals
+
+###### Compare via AICc
+aictab(list(mPooled_11, mPooled_12))
+# Best score is _2
+# Adding individual dispersion makes for a better fit
+
+mPooled_121 <- glmmTMB(NumLegal ~ FixedLocationID, dispformula = ~FixedLocationID, ziformula = ~1, family = nbinom2, data = OysterData)
+mPooled_122 <- glmmTMB(NumLegal ~ FixedLocationID, dispformula = ~FixedLocationID, ziformula = ~FixedLocationID, family = nbinom2, data = OysterData)
+
+###### Assess goodness-of-fit
+simulateResiduals(mPooled_121, n = 1000, plot = T)
+simulateResiduals(mPooled_122, n = 1000, plot = T)
+# both have good residuals
+
+###### Compare via AICc
+aictab(list(mPooled_121, mPooled_122))
+# Best score is _1
+# Adding individual zero inflation does not make for a better fit
+
+# Assign best model
+modelPooled <- mPooled_122
+
+####################
+
+##########
+##########
+### Remove unneeded models
+
+# rm(mRESTORE_1, mRESTORE_2, mRESTORE_3, mRESTORE_4)
+# rm(mNFWF_1, mNFWF_2, mNFWF_3, mNFWF_4)
+
+```
+
