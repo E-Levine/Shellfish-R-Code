@@ -1,3 +1,5 @@
+# adjusting so that 2026 data can be used
+
 ###### Load packages
 library(glmmTMB)
 library(tidyverse)
@@ -7,7 +9,7 @@ library(AICcmodavg)
 library(DT)
 
 ###### Read in data
-dater <- read.csv("All_Oysters_2025-05 csv.csv") %>% mutate(FixedLocationID = factor(FixedLocationID), StationName = factor(StationName))
+dater <- read.csv("All_Oysters_2026-0X.csv") %>% mutate(FixedLocationID = factor(FixedLocationID), StationName = factor(StationName))
 
 ###### Take a quick look at the data
 glimpse(dater)
@@ -100,7 +102,7 @@ simulateResiduals(m23, n = 1000, plot = T)
 simulateResiduals(m24, n = 1000, plot = T)
 aictab(list(m21, m22))
 aictab(list(m23, m24))
-aictab(list(m21, m22, m23, m24))
+aictab(list(m22, m23, m24))
 
 dater397 <- dater %>% filter(FixedLocationID=="397")
 m25 <- glmmTMB(NumLegal ~ 1, dispformula = ~1, ziformula = ~1, family = nbinom2, data = dater397)
@@ -157,7 +159,7 @@ aictab(list(m37, m38, m39, m40))
 ###### Final list of best-fitting model for each FixedLocationID
 ## FOR 2026 WE MIGHT NEED TO MODIFY THESE DEPENDING ON UPDATED MODEL SELECTION RESULTS
 ## ONLY 1 SITE (FixedLocationID=="395" = m19) WAS A ZERO INFLATED (POISSON) MODEL; THE REST WERE REGULAR OLD NB MODELS
-modList <- list(m2, m6, m10, m14, m19, m22, m26, m30, m34, m38)
+modList <- list(m2, m6, m10, m14, m17, m22, m26, m29, m34, m37)
 
 ###### Create an empty data frame for storing simulation results
 simDater <- data.frame(FixedLocationID = sort(unique(dater$FixedLocationID)), nSamples = NA, meanLog = NA, meanLogSE = NA, ziLogit = NA, ziLogitSE = NA, disp = NA, nbinom = NA, zi = NA) %>% mutate(nSamples = if_else(FixedLocationID %in% c("391", "397"), 50, 30))
@@ -396,3 +398,4 @@ ggplot(extras %>% filter(variable == "Boxes"), aes(x = FixedLocationID, y = Mean
 
 ###### Plot total number of bags
 ggplot(extras %>% filter(variable == "Bags"), aes(x = FixedLocationID, y = MeanTotal, fill = group)) + geom_bar(stat = "identity", position = position_dodge(width = 1, preserve = "single"), color = "black") + geom_errorbar(aes(ymin = L95, ymax = U95), width = 0.5, position = position_dodge(width = 1, preserve = "single")) + theme_bw() + facet_grid(~variable) + scale_fill_brewer(palette = "Dark2") + theme(axis.text = element_text(colour = "black"), panel.grid.major.x = element_blank(), panel.grid.major.y = element_line(color = "grey90", linetype = "solid"), panel.grid.minor = element_line(color = "grey90", linetype = "dashed"), legend.title = element_blank(), legend.position = "bottom") + scale_y_continuous(limits = c(0,35000), breaks = seq(0,35000, 2500), expand = expansion(add = c(0,0))) + labs(x = "Fixed Location ID", y = "Total bags (Mean ± 95% CLs; 1 bag = 225 oysters)")
+
