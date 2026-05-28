@@ -1,0 +1,43 @@
+---
+title: "oyster_simulation_corrected_202605_MD"
+output: html_document
+---
+
+### Adapting Colin's code from oyster_simulation_corrected_041626.R 
+### Author: Matt Davis
+
+```{r PackageLoad, echo = FALSE, warning = FALSE, message = FALSE}
+# Load necessary R packages
+library(glmmTMB)
+library(tidyverse)
+library(DHARMa)
+library(cowplot)
+library(AICcmodavg)
+library(DT)
+
+```
+
+```{r Load Data}
+###### Read in data
+dater <- read.csv("All_Oysters_2025-05 csv.csv") %>% 
+  mutate(FixedLocationID = factor(FixedLocationID), 
+         StationName = factor(StationName))
+
+###### Take a quick look at the data
+glimpse(dater)
+
+###### Summarize data: count up number of samples, total number of legal oysters, mean, SD, lower 95% CL, upper 95% CL, and CV of the number of legal oysters, and finally the number of 0 observations by FixedLocationID
+datSumm <- dater %>% 
+  group_by(FixedLocationID) %>% 
+  summarize(nSamples = n(), 
+            TotalLegal = sum(NumLegal), 
+            MeanLegal = round(mean(NumLegal),2), 
+            sdLegal = round(sd(NumLegal),2), 
+            lwr = round(quantile(NumLegal, 0.025),2), 
+            upr = round(quantile(NumLegal, 0.975),2), 
+            CVLegal = round(sdLegal/MeanLegal*100,2), 
+            prop0 = round(mean(NumLegal==0),2)
+            )
+
+###### Look at the summaries
+datatable(datSumm)
